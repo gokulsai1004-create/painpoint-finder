@@ -21,7 +21,9 @@ elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import sources
-import sources.reddit  # noqa: F401 - importing registers the source
+import sources.hackernews  # noqa: F401 - importing registers the source
+import sources.reddit  # noqa: F401
+import sources.web  # noqa: F401
 from leads import has_negation, rank
 
 
@@ -91,7 +93,7 @@ def main():
         print("\n  Some sources could not be searched. Treat a low count as")
         print("  incomplete rather than as an answer.")
 
-    leads, terms = rank(results, args.query, limit=args.n)
+    leads, pages, terms = rank(results, args.query, limit=args.n)
     print(f"\nMatched on: {', '.join(terms) or '(no usable keywords)'}")
 
     if has_negation(args.query):
@@ -102,29 +104,47 @@ def main():
         print("  what you asked. Rephrasing positively helps: try \"unpaid\"")
         print("  rather than \"not paid\".")
 
-    if not leads:
-        print("\nNo leads found.")
+    if not leads and not pages:
+        print("\nNothing found.")
         if level in ("LOW", "PARTIAL"):
             print("Coverage was thin, so this is weak evidence either way.")
         else:
             print("Nobody in the searched sources is describing this problem.")
         return 1
 
-    print(f"\n{len(leads)} lead(s), best first:\n")
-    print("=" * 78)
+    if leads:
+        print(f"\n{len(leads)} PERSON/PEOPLE you can reply to, best first:\n")
+        print("=" * 78)
 
-    for i, lead in enumerate(leads, 1):
-        p = lead["post"]
-        print(f"\n[{i}] {p.title.strip()[:90]}")
-        print(f"    {p.source} - {lead['age']} - by {p.author or 'unknown'}")
-        print(f"    match: {', '.join(lead['matched'])} (score {lead['score']})")
-        print(f"    {p.url}")
-        print("\n    --- draft reply (edit before sending) ---")
-        print(wrap(lead["draft"]))
-        print("\n" + "-" * 78)
+        for i, lead in enumerate(leads, 1):
+            p = lead["post"]
+            print(f"\n[{i}] {p.title.strip()[:90]}")
+            print(f"    {p.source} - {lead['age']} - by {p.author or 'unknown'}")
+            print(f"    match: {', '.join(lead['matched'])} (score {lead['score']})")
+            print(f"    {p.url}")
+            print("\n    --- draft reply (edit before sending) ---")
+            print(wrap(lead["draft"]))
+            print("\n" + "-" * 78)
+    else:
+        print("\nNo people found to reply to.")
+        if pages:
+            print("The topic exists on the web, but nobody in the searched")
+            print("communities is currently discussing it.")
 
-    print("\nThis tool never sends anything. Read each draft, change it so it")
-    print("sounds like you, and post it yourself.\n")
+    if pages:
+        # Pages are evidence the topic is real. They are not people, and the
+        # heading says so rather than letting a blog post look like a lead.
+        print(f"\n{len(pages)} PAGE(S) about this - evidence, not people:\n")
+        for i, page in enumerate(pages, 1):
+            p = page["post"]
+            print(f"  [{i}] {p.title.strip()[:74]}")
+            print(f"      {p.source} - {p.url[:88]}")
+        print("\n  No drafts for these: a page has nobody to reply to.")
+
+    if leads:
+        print("\nThis tool never sends anything. Read each draft, change it so it")
+        print("sounds like you, and post it yourself.")
+    print()
     return 0
 
 

@@ -28,7 +28,13 @@ ERROR = "error"      # network failure, bad response, parse failure
 
 @dataclass
 class Post:
-    """One thing somebody wrote, from any source."""
+    """One thing somebody wrote, from any source.
+
+    `contactable` separates a person from a page. A Reddit post has an author
+    you can reply to; a blog article usually does not. Drafting an opener for
+    something nobody can answer would waste the user's time and make the tool
+    look like it does not understand its own results.
+    """
     source: str
     title: str
     body: str
@@ -36,6 +42,7 @@ class Post:
     author: str = ""
     created_utc: float = 0.0
     replies: int = 0
+    contactable: bool = True
 
     def text(self):
         return f"{self.title}\n{self.body}"

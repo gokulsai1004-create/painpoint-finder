@@ -245,9 +245,16 @@ def rank(results, query, limit=10, min_score=1):
                     "score": points,
                     "matched": hits,
                     "quote": best_quote(post, terms),
-                    "draft": draft(post, terms),
+                    # A page has nobody to reply to, so drafting one would be
+                    # theatre. Left empty rather than faked.
+                    "draft": draft(post, terms) if post.contactable else "",
                     "age": age_label(post.created_utc),
                 })
 
     scored.sort(key=lambda x: -x["score"])
-    return scored[:limit], terms
+
+    # People first, always. A page is evidence the topic exists; a person is
+    # someone who can answer you, and answers are the point.
+    people = [s for s in scored if s["post"].contactable][:limit]
+    pages = [s for s in scored if not s["post"].contactable][:limit]
+    return people, pages, terms

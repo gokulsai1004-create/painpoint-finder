@@ -21,7 +21,8 @@ elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import sources
-import sources.hackernews  # noqa: F401 - importing registers the source
+import sources.github  # noqa: F401 - importing registers the source
+import sources.hackernews  # noqa: F401
 import sources.reddit  # noqa: F401
 import sources.stackoverflow  # noqa: F401
 import sources.web  # noqa: F401

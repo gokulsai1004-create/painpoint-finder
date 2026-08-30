@@ -330,6 +330,52 @@ class TestCache(unittest.TestCase):
         self.cache._path("t_ok", "client refuses to pay").unlink()
 
 
+class TestSourceContract(unittest.TestCase):
+    """Every source must honour the same contract, because the verdict layer
+    trusts it blindly. A source that returns OK when it was actually refused
+    would let the tool report 'nobody has this problem' about a search it never
+    ran."""
+
+    def _all_sources(self):
+        import sources
+        import sources.github  # noqa: F401
+        import sources.hackernews  # noqa: F401
+        import sources.reddit  # noqa: F401
+        import sources.stackoverflow  # noqa: F401
+        import sources.web  # noqa: F401
+        return sources
+
+    def test_every_source_is_registered(self):
+        sources = self._all_sources()
+        for name in ("github", "hackernews", "reddit", "stackoverflow", "web"):
+            self.assertIn(name, sources.available())
+
+    def test_a_raising_source_becomes_error_not_a_crash(self):
+        # One broken source must not take the whole search down; the others may
+        # still have something useful.
+        sources = self._all_sources()
+
+        def boom(query, limit):
+            raise RuntimeError("simulated")
+
+        sources.register("t_boom", boom)
+        result = sources.run("t_boom", "anything", use_cache=False)
+        self.assertEqual(result.status, ERROR)
+        self.assertIn("RuntimeError", result.detail)
+
+    def test_run_all_survives_one_bad_source(self):
+        sources = self._all_sources()
+        sources.register("t_bad", lambda q, l: (_ for _ in ()).throw(ValueError("x")))
+        sources.register("t_good",
+                         lambda q, l: Result("t_good", OK,
+                                             posts=[post(url="u1")], searched=1))
+        results = sources.run_all("anything", only=["t_bad", "t_good"],
+                                  use_cache=False)
+        statuses = {r.source: r.status for r in results}
+        self.assertEqual(statuses["t_bad"], ERROR)
+        self.assertEqual(statuses["t_good"], OK)
+
+
 class TestSemantic(unittest.TestCase):
     """Reranking is optional. The tool must work identically without it, and
     must never fail because of it."""

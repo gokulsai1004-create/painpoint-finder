@@ -89,7 +89,13 @@ a minute. Every run after that is offline. Skip it entirely with
 | Reddit | People describing problems, via public RSS | no |
 | Hacker News | Stories **and comments** — comments are where complaints live | no |
 | Stack Overflow | Developers stuck on a real problem, via the public API | no |
+| GitHub issues | Someone saying what a tool they *already use* cannot do | no |
 | Web (DuckDuckGo) | Fallback so no query ever returns a false zero | no |
+
+GitHub issues are worth calling out. A forum complaint is someone annoyed; a
+filed issue is someone who installed the thing, hit the wall, and cared enough
+to write it down against the project. The gap between what a tool does and what
+someone needed is sitting in the open.
 
 ## Ranking
 
@@ -190,7 +196,7 @@ Return `BLOCKED` if you could not look, `ERROR` if something broke, `OK` with
 an empty list if you looked and found nothing. Getting that right is the only
 thing the rest of the tool depends on.
 
-Sources worth adding: GitHub issues, app-store reviews, G2/Capterra, Upwork job
+Sources worth adding: app-store reviews, G2/Capterra, Upwork job
 posts (someone *paying* to fix a problem is the strongest signal there is), and
 SBIR solicitations for anything defence or government adjacent.
 
@@ -200,7 +206,7 @@ SBIR solicitations for anything defence or government adjacent.
 python test_painpoint.py
 ```
 
-37 tests, all offline — a test that needs Reddit to be up is a test that fails
+40 tests, all offline — a test that needs Reddit to be up is a test that fails
 for reasons that are not bugs.
 
 ## Licence

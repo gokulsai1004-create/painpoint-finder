@@ -86,6 +86,73 @@ class TestScoring(unittest.TestCase):
             leads.score(plain, self.TERMS)[0],
         )
 
+    def test_job_adverts_are_penalised(self):
+        # A warehouse query returned "Forklift drivers" from r/houstonjobs as
+        # the top person to reply to. Someone hiring is not someone hurting,
+        # and job boards flood any query about manual or shift work.
+        terms = ["warehouse", "forklift", "drivers"]
+        problem = post(title="Forklift drivers waiting hours at the dock",
+                       body="Our warehouse forklift drivers wait for a dock "
+                            "slot every morning and nothing moves.")
+        advert = post(title="Forklift drivers",
+                      body="Now hiring warehouse forklift drivers. $22 per "
+                           "hour, full-time, benefits include health. Apply now.")
+        self.assertLess(leads.score(advert, terms)[0],
+                        leads.score(problem, terms)[0])
+
+    def test_informal_job_adverts_are_caught(self):
+        # The advert that actually slipped through had no formal phrasing at
+        # all: no "now hiring", no rate, no "apply". Verbatim from r/houstonjobs.
+        advert = ("Hey guys, at my company we are in dire need of good forklift "
+                  "drivers that know the basic of technology, but better yet an "
+                  "amazing forklift driver, this warehouse is located in "
+                  "brookshire,Tx if anyone is interested.")
+        self.assertTrue(leads.JOB_MARKERS.search(advert))
+
+    def test_bracketed_hiring_tags_are_caught(self):
+        # Automated job-board bots use these. Both top leads for a warehouse
+        # query were titled "[HIRING] a Warehouse Forklift Truck Driver".
+        for title in ("[HIRING] a Warehouse Forklift Truck Driver - Sharpak",
+                      "[FOR HIRE] experienced forklift operator",
+                      "[Job] Warehouse associate needed"):
+            self.assertTrue(leads.JOB_MARKERS.search(title), title)
+
+    def test_job_markers_do_not_catch_genuine_posts(self):
+        # Over-matching here silently deletes real leads, which is worse than
+        # letting an advert through: you never see what you lost.
+        genuine = [
+            "I am interested in solving this problem",
+            "Looking for advice on unpaid invoices",
+            "My client is looking for more revisions",
+            "Our drivers wait forty minutes for a dock slot every morning",
+            "I need advice about a client who refuses to pay",
+        ]
+        for text in genuine:
+            self.assertIsNone(leads.JOB_MARKERS.search(text), text)
+
+    def test_bodyless_photo_posts_rank_below_real_complaints(self):
+        # Two real false leads: "Cement Plant Kiln" (17 chars) on r/pics and
+        # "Warehouse forklift machines" (27 chars) on a photography sub. Both
+        # matched the query perfectly and described nothing.
+        terms = ["warehouse", "forklift", "drivers"]
+        photo = post(title="Warehouse forklift machines", body="")
+        real = post(title="Forklift drivers stuck waiting",
+                    body="Every morning our warehouse forklift drivers wait "
+                         "forty minutes for a dock slot to free up, and the "
+                         "whole shift runs late because of it.")
+        self.assertLess(leads.score(photo, terms)[0],
+                        leads.score(real, terms)[0])
+
+    def test_short_cry_for_help_is_not_over_penalised(self):
+        # The penalty scales, so a genuinely brief but real post survives.
+        terms = ["client", "pay"]
+        brief = post(title="Client won't pay, what do I do?",
+                     body="Three months of invoices ignored and I am stuck.")
+        empty = post(title="Client pay", body="")
+        self.assertGreater(leads.score(brief, terms)[0], 0)
+        self.assertGreater(leads.score(brief, terms)[0],
+                           leads.score(empty, terms)[0])
+
     def test_relevance_beats_recency(self):
         # An exactly-relevant post from months ago must outrank an irrelevant
         # one from this minute, or "sort by new" quietly becomes the ranking.
@@ -157,7 +224,7 @@ class TestRanking(unittest.TestCase):
                                       semantic_on=False)
         self.assertEqual([p["post"].url for p in people], ["u2"])
         self.assertEqual([p["post"].url for p in pages], ["u1"])
-        self.assertTrue(pages[0]["stale"])
+        self.assertEqual(pages[0]["why_not_lead"], "too old")
 
     def test_undated_post_is_not_a_lead(self):
         undated = post(title="Client refuses to pay", body="text", url="u1")

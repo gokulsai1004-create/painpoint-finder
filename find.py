@@ -193,7 +193,13 @@ def main():
               f"people to message:\n")
         for i, page in enumerate(pages, 1):
             p = page["post"]
-            why = f"too old ({page['age']})" if page.get("stale") else "no author"
+            reason = page.get("why_not_lead")
+            if reason == "too old":
+                why = f"too old ({page['age']})"
+            elif reason == "nothing written":
+                why = "nothing written - photo or link only"
+            else:
+                why = "no author"
             print(f"  [{i}] {p.title.strip()[:70]}")
             print(f"      {p.source} - {why}")
             print(f"      {p.url[:88]}")

@@ -43,6 +43,39 @@ ADVICE_MARKERS = re.compile(
 # They are not a lead - they are a competitor. This costs a real lead
 # occasionally (people do build things because they felt the pain), which is
 # why it is a heavy penalty rather than an exclusion.
+# Job adverts drown any query about manual, industrial or shift work. A
+# warehouse search returned "Forklift drivers" from r/houstonjobs as the top
+# person to reply to, and the surrounding themes were "apply description",
+# "per hour", "company date" - a corpus of adverts, not of problems.
+#
+# Someone hiring is not someone hurting. Same reasoning as the promo penalty:
+# the poster is advertising past the pain, not describing it.
+JOB_MARKERS = re.compile(
+    # Bracketed tags. Reddit convention, and what automated job-board bots use:
+    # both top leads for a warehouse query were titled "[HIRING] a Warehouse
+    # Forklift Truck Driver". Matched outside the \b group because brackets are
+    # not word characters.
+    r"(\[\s*(hiring|for hire|job|jobs|recruiting|vacancy)\s*\]"
+    # Formal postings
+    r"|\b(now hiring|we'?re hiring|is hiring|are hiring|job description|"
+    r"apply (now|online|here|today)|per hour|\$\d+\s*(/|per\s)\s*(hr|hour)|"
+    r"hourly (pay|rate|wage)|full[- ]time|part[- ]time|send (your )?resume|"
+    r"submit (your )?resume|job (id|posting|opening|title)|position available|"
+    r"shifts? available|competitive (pay|salary|benefits)|"
+    r"equal opportunity employer|benefits include"
+    # Informal recruitment, which is what actually slipped through. A real post
+    # read "we are in dire need of good forklift drivers ... if anyone is
+    # interested" - no formal phrasing anywhere, and it ranked first.
+    r"|if (anyone|you|you'?re|somebody|someone)\s+(is\s+|are\s+)?interested"
+    r"|anyone\s+(is\s+)?interested"
+    r"|in (dire |urgent )?need of(\s+\w+){0,3}\s+"
+    r"(drivers?|workers?|staff|operators?|techs?|technicians?|hands?)"
+    r"|dm me if|hit me up if|pm me if"
+    r"|looking (for|to hire)(\s+\w+){0,3}\s+"
+    r"(drivers?|workers?|staff|operators?|technicians?|candidates?|employees?))\b)",
+    re.IGNORECASE,
+)
+
 PROMO_MARKERS = re.compile(
     r"\b(built (a|an|this|my)|i made|i built|made a|launching|just launched|"
     r"feedback wanted|check out my|introducing|my (new )?(tool|app|saas|product)|"
@@ -150,6 +183,20 @@ def score(post, terms, pairs=()):
     if PROMO_MARKERS.search(post.text()):
         points -= 60
 
+    if JOB_MARKERS.search(post.text()):
+        points -= 70
+
+    # A post with no content describes no problem. Photo and link shares carry
+    # a title and an empty body, and they keep surfacing as top leads for
+    # physical-world queries: a cement kiln photo on r/pics, forklift machines
+    # on a photography sub. Both matched perfectly and said nothing.
+    #
+    # Scaled rather than a cutoff, because a genuinely short cry for help
+    # ("Client won't pay, what do I do?") is still a real person.
+    substance = len(post.text().strip())
+    if substance < SUBSTANCE_CHARS:
+        points -= int(50 * (1 - substance / SUBSTANCE_CHARS))
+
     # Recency matters, but it must never outrank relevance: someone from six
     # months ago with the exact problem beats someone from this minute without
     # it. Capped low for that reason.
@@ -225,6 +272,18 @@ def draft(post, terms):
 # to the evidence list rather than dropped.
 MAX_LEAD_AGE_DAYS = 550  # about eighteen months
 
+# Below this much text, a post is almost always a photo or link share rather
+# than someone describing a problem. Real complaints run to paragraphs; the two
+# worst false leads this tool produced were 17 and 27 characters long.
+SUBSTANCE_CHARS = 140
+
+# A post with no body needs a title long enough to carry the problem on its
+# own. Set above the two real false leads ("Cement Plant Kiln" at 17,
+# "Warehouse forklift machines" at 27) and below a title that genuinely states
+# a problem ("Client refuses to pay me and my dad for over 2 months of work"
+# at 61).
+BARE_TITLE_CHARS = 45
+
 
 def is_stale(post):
     if not post.created_utc:
@@ -232,6 +291,30 @@ def is_stale(post):
         # else undated cannot be judged, so treat it as evidence not a lead.
         return True
     return (time.time() - post.created_utc) / 86400 > MAX_LEAD_AGE_DAYS
+
+
+def is_thin(post):
+    """A photo or link share: nothing written, nothing to reply to.
+
+    The two worst false leads this tool produced were exactly this shape -
+    "Cement Plant Kiln" on r/pics and "Warehouse forklift machines" on a
+    photography sub. Both matched their query perfectly and described nothing,
+    because the content was an image.
+
+    The signal is an EMPTY BODY with a SHORT title, not a short total. A
+    title-only post can still be a real complaint if the title carries it:
+    "Client refuses to pay me and my dad for over 2 months of work" says
+    everything needed. "Cement Plant Kiln" says nothing. Length of the title is
+    what separates them.
+
+    A score penalty was the wrong tool for this. Semantic reranking weights
+    topic at 65%, and a photo OF the subject is topically perfect, so any
+    deduction washes out. This is the same question staleness asks: is there a
+    person here to have a conversation with?
+    """
+    if post.body.strip():
+        return False
+    return len(post.title.strip()) < BARE_TITLE_CHARS
 
 
 def rank(results, query, limit=10, min_score=1, semantic_on=True):
@@ -295,10 +378,16 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
     people, pages = [], []
     for entry in scored:
         post_obj = entry["post"]
-        if post_obj.contactable and not is_stale(post_obj):
+        stale, thin = is_stale(post_obj), is_thin(post_obj)
+
+        if post_obj.contactable and not stale and not thin:
             people.append(entry)
         else:
-            entry["stale"] = post_obj.contactable  # a person, just too old
+            # Record WHY, because the reason changes what the reader does with
+            # it: an old post still proves the problem existed, a photo proves
+            # almost nothing.
+            if post_obj.contactable:
+                entry["why_not_lead"] = "too old" if stale else "nothing written"
             pages.append(entry)
 
     return people[:limit], pages[:limit], terms

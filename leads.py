@@ -217,6 +217,23 @@ def draft(post, terms):
     )
 
 
+# A lead is someone who might answer you. Past a certain age they will not:
+# they solved it, moved on, or abandoned the account. A real run for a heavy
+# industry query returned a photo posted to r/pics 113 months ago as the top
+# "person you can reply to", which is the tool promising something it cannot
+# deliver. Old posts are still evidence the problem exists, so they are moved
+# to the evidence list rather than dropped.
+MAX_LEAD_AGE_DAYS = 550  # about eighteen months
+
+
+def is_stale(post):
+    if not post.created_utc:
+        # No date at all. Web results are already non-contactable; anything
+        # else undated cannot be judged, so treat it as evidence not a lead.
+        return True
+    return (time.time() - post.created_utc) / 86400 > MAX_LEAD_AGE_DAYS
+
+
 def rank(results, query, limit=10, min_score=1, semantic_on=True):
     """All sources' posts, best leads first.
 
@@ -272,6 +289,16 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
 
     # People first, always. A page is evidence the topic exists; a person is
     # someone who can answer you, and answers are the point.
-    people = [s for s in scored if s["post"].contactable][:limit]
-    pages = [s for s in scored if not s["post"].contactable][:limit]
-    return people, pages, terms
+    #
+    # Two ways to fail that promise: no author to reply to, or an author who
+    # posted so long ago they will never see it. Both become evidence instead.
+    people, pages = [], []
+    for entry in scored:
+        post_obj = entry["post"]
+        if post_obj.contactable and not is_stale(post_obj):
+            people.append(entry)
+        else:
+            entry["stale"] = post_obj.contactable  # a person, just too old
+            pages.append(entry)
+
+    return people[:limit], pages[:limit], terms

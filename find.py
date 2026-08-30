@@ -184,14 +184,17 @@ def main():
             print("communities is currently discussing it.")
 
     if pages:
-        # Pages are evidence the topic is real. They are not people, and the
-        # heading says so rather than letting a blog post look like a lead.
-        print(f"\n{len(pages)} PAGE(S) about this - evidence, not people:\n")
+        # Evidence the topic is real, but not someone who will answer: either a
+        # page with no author, or a person who posted too long ago to reply.
+        print(f"\n{len(pages)} MORE - evidence the topic is real, but not "
+              f"people to message:\n")
         for i, page in enumerate(pages, 1):
             p = page["post"]
-            print(f"  [{i}] {p.title.strip()[:74]}")
-            print(f"      {p.source} - {p.url[:88]}")
-        print("\n  No drafts for these: a page has nobody to reply to.")
+            why = f"too old ({page['age']})" if page.get("stale") else "no author"
+            print(f"  [{i}] {p.title.strip()[:70]}")
+            print(f"      {p.source} - {why}")
+            print(f"      {p.url[:88]}")
+        print("\n  No drafts for these: nobody would see the reply.")
 
     if leads:
         print("\nThis tool never sends anything. Read each draft, change it so it")

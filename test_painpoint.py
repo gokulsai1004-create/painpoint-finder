@@ -143,6 +143,30 @@ class TestRanking(unittest.TestCase):
         self.assertEqual(pages[0]["draft"], "")
         self.assertNotEqual(people[0]["draft"], "")
 
+    def test_ancient_post_is_evidence_not_a_lead(self):
+        # A real run for a heavy-industry query returned a photo posted to
+        # r/pics 113 months ago as the top "person you can reply to". Nobody
+        # answers a nine-year-old post.
+        old = post(title="Cement Plant Kiln", body="cement kiln photo",
+                   url="u1", age_days=3400)
+        recent = post(title="Cement kiln maintenance problem",
+                      body="our cement kiln keeps failing", url="u2",
+                      age_days=20)
+        people, pages, _ = leads.rank(self._results([old, recent]),
+                                      "cement kiln maintenance",
+                                      semantic_on=False)
+        self.assertEqual([p["post"].url for p in people], ["u2"])
+        self.assertEqual([p["post"].url for p in pages], ["u1"])
+        self.assertTrue(pages[0]["stale"])
+
+    def test_undated_post_is_not_a_lead(self):
+        undated = post(title="Client refuses to pay", body="text", url="u1")
+        undated.created_utc = 0
+        people, pages, _ = leads.rank(self._results([undated]),
+                                      "client refuses pay", semantic_on=False)
+        self.assertEqual(people, [])
+        self.assertEqual(len(pages), 1)
+
     def test_blocked_source_contributes_nothing(self):
         results = [Result("test", BLOCKED, detail="rate-limited")]
         people, pages, _ = leads.rank(results, "client refuses pay")

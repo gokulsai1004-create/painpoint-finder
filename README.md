@@ -10,7 +10,7 @@ Every tool in this space stops at a report. This one ends at a person and
 something to say to them.
 
 ```
-py -3 find.py "client refuses to pay for revisions"
+python find.py "client refuses to pay for revisions"
 ```
 
 ```
@@ -66,14 +66,21 @@ this tool is for.
 ## Install
 
 ```
-git clone <this repo>
+git clone https://github.com/gokulsai1004-create/painpoint-finder.git
 cd painpoint-finder
 pip install requests fastembed   # fastembed optional, improves ranking
-py -3 find.py "your problem, in your own words"
+python find.py "your problem, in your own words"
 ```
 
-Python 3.9+. One dependency. **No API key, no account, no sign-up** — every
-source is public and anonymous.
+Python 3.9+. One required dependency. **No API key, no account, no sign-up** —
+every source is public and anonymous.
+
+If `python` runs Python 2 on your machine, use `python3`. On Windows, `py -3`
+also works. If `pip` is missing, try `python -m pip`.
+
+First run with `fastembed` installed downloads a ~50MB model once, which takes
+a minute. Every run after that is offline. Skip it entirely with
+`--no-semantic` if you would rather not.
 
 ## What it searches
 
@@ -190,7 +197,7 @@ SBIR solicitations for anything defence or government adjacent.
 ## Tests
 
 ```
-py -3 test_painpoint.py
+python test_painpoint.py
 ```
 
 35 tests, all offline — a test that needs Reddit to be up is a test that fails

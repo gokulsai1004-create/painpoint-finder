@@ -217,7 +217,7 @@ def draft(post, terms):
     )
 
 
-def rank(results, query, limit=10, min_score=1):
+def rank(results, query, limit=10, min_score=1, semantic_on=True):
     """All sources' posts, best leads first.
 
     Deduped on author plus title, not URL: a cross-post to five subreddits is
@@ -250,6 +250,23 @@ def rank(results, query, limit=10, min_score=1):
                     "draft": draft(post, terms) if post.contactable else "",
                     "age": age_label(post.created_utc),
                 })
+
+    # Rerank on meaning where it is available. Keyword scores decide WHICH
+    # posts are candidates; the embedding decides which of them are actually
+    # about the same thing. Every false positive this tool produced - a car
+    # lease, a wrestling thread, a care client refusing dentures - shared words
+    # with the query and nothing else.
+    if semantic_on and scored:
+        import semantic
+
+        sims = semantic.similarities(query, [s["post"].text() for s in scored])
+        if sims is not None:
+            top = max(s["score"] for s in scored)
+            for entry, sim in zip(scored, sims):
+                entry["similarity"] = sim
+                entry["keyword_score"] = entry["score"]
+                entry["score"] = semantic.blend(entry["score"], sim, top)
+                entry["reranked"] = True
 
     scored.sort(key=lambda x: -x["score"])
 

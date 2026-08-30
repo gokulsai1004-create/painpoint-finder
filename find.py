@@ -23,6 +23,7 @@ elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover
 import sources
 import sources.hackernews  # noqa: F401 - importing registers the source
 import sources.reddit  # noqa: F401
+import sources.stackoverflow  # noqa: F401
 import sources.web  # noqa: F401
 from leads import has_negation, rank
 from verdict import explain, summarise
@@ -69,6 +70,8 @@ def main():
     ap.add_argument("-n", type=int, default=5, help="how many leads (default 5)")
     ap.add_argument("--limit", type=int, default=100,
                     help="posts to pull per source (default 100)")
+    ap.add_argument("--no-semantic", action="store_true",
+                    help="skip meaning-based reranking (faster, less accurate)")
     args = ap.parse_args()
 
     print(f'\nSearching for: "{args.query}"\n')
@@ -109,8 +112,20 @@ def main():
         print("\n  Some sources could not be searched. Treat a low count as")
         print("  incomplete rather than as an answer.")
 
-    leads, pages, terms = rank(results, args.query, limit=args.n)
+    leads, pages, terms = rank(results, args.query, limit=args.n,
+                               semantic_on=not args.no_semantic)
     print(f"\nMatched on: {', '.join(terms) or '(no usable keywords)'}")
+
+    # Say which ranking actually ran. Keyword-only ordering is noticeably
+    # worse, and a user comparing two runs deserves to know why.
+    reranked = any(l.get("reranked") for l in leads + pages)
+    if reranked:
+        print("Ranked by meaning (local model, offline)")
+    elif not args.no_semantic:
+        import semantic
+        if not semantic.available():
+            print("Ranked by keywords only - install fastembed for better "
+                  "results: pip install fastembed")
 
     if has_negation(args.query):
         print("\n  WARNING: your query contains a negation (\"not\", \"without\",")

@@ -56,8 +56,16 @@ NOISE = STOPWORDS | COMMON | {
 
 WORD = re.compile(r"[a-z][a-z']{2,}")
 
+# Reddit bodies carry preview image links like
+# https://preview.redd.it/x.png?width=633&format=png&auto=webp
+# Left in, their query-string fragments become "top themes": real runs produced
+# "auto webp", "format png" and "preview redd" as the things people were
+# supposedly talking about. Strip URLs before any counting.
+URL = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+
 
 def _words(text):
+    text = URL.sub(" ", text)
     return [w for w in WORD.findall(text.lower()) if w not in NOISE]
 
 

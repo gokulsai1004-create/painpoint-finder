@@ -68,7 +68,7 @@ this tool is for.
 ```
 git clone <this repo>
 cd painpoint-finder
-pip install requests
+pip install requests fastembed   # fastembed optional, improves ranking
 py -3 find.py "your problem, in your own words"
 ```
 
@@ -81,7 +81,34 @@ source is public and anonymous.
 |---|---|---|
 | Reddit | People describing problems, via public RSS | no |
 | Hacker News | Stories **and comments** — comments are where complaints live | no |
+| Stack Overflow | Developers stuck on a real problem, via the public API | no |
 | Web (DuckDuckGo) | Fallback so no query ever returns a false zero | no |
+
+## Ranking
+
+Optional but recommended:
+
+```
+pip install fastembed
+```
+
+Keyword matching finds posts containing your words. It cannot tell that a post
+about a care client refusing to wear *dentures* is not about a client refusing
+to pay an *invoice* — both contain "client" and "refuses". A small model
+running **on your own machine** can, because it places text by meaning.
+
+Measured against this tool's own false positives, for the query *"freelance
+client refuses to pay for revisions"*:
+
+| post | keyword rank | with reranking |
+|---|---|---|
+| Real "client won't pay" post | 1 | **1** |
+| Care client refusing dentures | **2** | 4 |
+| Car lease financing | **1** | 5 |
+| Wrestling thread | **1** | 6 |
+
+No key, no account, no network after the first run. Skipped automatically if
+`fastembed` is not installed, or explicitly with `--no-semantic`.
 
 ## The three ideas it is built on
 
@@ -124,15 +151,19 @@ auto-posting. The version that sends fifty messages is a spam cannon; the
 version that helps you write one good reply is useful. That is a design
 constraint, not a missing feature, and it is not coming.
 
-## Known limitation
+## Known limitation: negation
 
-**Ranking is keyword-based, so it cannot represent negation.** `not getting
-paid` and `getting paid` reduce to identical terms and are opposite problems.
-The tool warns you when your query contains a negation and suggests rephrasing
-positively — `unpaid revisions` works far better than `not paid for revisions`.
+**Neither ranking mode can represent negation.** `not getting paid` and
+`getting paid` are opposite problems, and both approaches treat them as nearly
+the same thing. Keywords reduce them to identical terms. Embeddings are worse
+than you would expect here — measured, the model rates *"getting paid for extra
+work"* as the **closest** match to *"not getting paid for extra work"*, at
+0.906, higher than any other candidate tested. That is a documented weakness of
+the technique, not a bug in this tool.
 
-Semantic ranking fixes this properly. It needs a model API key, which is the
-next thing on the list.
+So the warning stays. When your query contains a negation the tool says so and
+suggests rephrasing positively: `unpaid revisions` works far better than `not
+paid for revisions`.
 
 ## Adding a source
 
@@ -152,10 +183,9 @@ Return `BLOCKED` if you could not look, `ERROR` if something broke, `OK` with
 an empty list if you looked and found nothing. Getting that right is the only
 thing the rest of the tool depends on.
 
-Sources worth adding: Stack Overflow, GitHub issues, app-store reviews,
-G2/Capterra, Upwork job posts (someone *paying* to fix a problem is the
-strongest signal there is), and SBIR solicitations for anything defence or
-government adjacent.
+Sources worth adding: GitHub issues, app-store reviews, G2/Capterra, Upwork job
+posts (someone *paying* to fix a problem is the strongest signal there is), and
+SBIR solicitations for anything defence or government adjacent.
 
 ## Tests
 
@@ -163,7 +193,7 @@ government adjacent.
 py -3 test_painpoint.py
 ```
 
-30 tests, all offline — a test that needs Reddit to be up is a test that fails
+35 tests, all offline — a test that needs Reddit to be up is a test that fails
 for reasons that are not bugs.
 
 ## Licence

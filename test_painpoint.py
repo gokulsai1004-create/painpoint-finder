@@ -200,6 +200,17 @@ class TestThemes(unittest.TestCase):
         for junk in ("how many", "everyone said", "many people"):
             self.assertNotIn(junk, phrases)
 
+    def test_urls_are_not_themes(self):
+        # Real runs reported "auto webp", "format png" and "preview redd" as
+        # what people were talking about. Those are Reddit image-link query
+        # strings, not topics.
+        body = ("Client wont pay. https://preview.redd.it/a.png?width=633"
+                "&format=png&auto=webp and more about payment terms")
+        posts = [post(body=body, url=f"u{i}") for i in range(5)]
+        phrases = [p for p, _ in verdict.themes(posts, [], min_count=2)]
+        for junk in ("auto webp", "format png", "preview redd", "png width"):
+            self.assertNotIn(junk, phrases)
+
     def test_one_ranting_post_cannot_outvote_many(self):
         ranter = post(body=" ".join(["invoice dispute"] * 40))
         others = [post(body="payment terms matter") for _ in range(4)]
@@ -292,6 +303,44 @@ class TestCache(unittest.TestCase):
         got, _ = self.cache.load("t_ok", "client refuses to pay")
         self.assertIsNotNone(got)
         self.cache._path("t_ok", "client refuses to pay").unlink()
+
+
+class TestSemantic(unittest.TestCase):
+    """Reranking is optional. The tool must work identically without it, and
+    must never fail because of it."""
+
+    def setUp(self):
+        import semantic
+        self.semantic = semantic
+
+    def test_blend_prefers_topic_over_keyword_overlap(self):
+        # The dentures post shared "client" and "refuses" with the query and
+        # was ranked second. High keyword score plus low similarity must lose
+        # to the reverse.
+        off_topic = self.semantic.blend(keyword_score=150, similarity=0.50,
+                                        max_keyword=150)
+        on_topic = self.semantic.blend(keyword_score=80, similarity=0.78,
+                                       max_keyword=150)
+        self.assertGreater(on_topic, off_topic)
+
+    def test_blend_handles_zero_max_without_dividing_by_zero(self):
+        self.assertIsInstance(
+            self.semantic.blend(0, 0.5, max_keyword=0), int)
+
+    def test_empty_input_returns_empty_not_none(self):
+        # None means "could not rerank"; [] means "nothing to rerank". Callers
+        # branch on that difference.
+        self.assertEqual(self.semantic.similarities("q", []), [])
+
+    def test_ranking_works_with_semantic_disabled(self):
+        results = [Result("t", OK,
+                          posts=[post(title="Client refuses to pay",
+                                      body="freelancer here", url="u1")],
+                          searched=1)]
+        people, pages, terms = leads.rank(results, "client refuses pay",
+                                          semantic_on=False)
+        self.assertEqual(len(people), 1)
+        self.assertNotIn("reranked", people[0])
 
 
 if __name__ == "__main__":

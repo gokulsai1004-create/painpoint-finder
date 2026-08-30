@@ -200,6 +200,50 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(verdict.summarise(many, seven, [], [])["signal"], "WEAK")
         self.assertEqual(verdict.summarise(few, seven, [], [])["signal"], "STRONG")
 
+    def _entries(self, n, similarity):
+        return [{"post": post(url=f"u{i}"), "similarity": similarity}
+                for i in range(n)]
+
+    def test_low_similarity_downgrades_the_signal(self):
+        # A heavy-industry search matched 4 of 123 and reported MODERATE -
+        # "worth a conversation" - when the top hit was a nine-year-old photo.
+        # Quantity said yes, quality said no, and only quantity was asked.
+        results = [Result("s", OK, posts=[], searched=100)]
+        good = verdict.summarise(results, self._entries(5, 0.78), [], [])
+        poor = verdict.summarise(results, self._entries(5, 0.50), [], [])
+        self.assertEqual(good["signal"], "MODERATE")
+        self.assertEqual(poor["signal"], "WEAK")
+        self.assertIn("something else", poor["caveat"])
+
+    def test_median_used_so_one_good_hit_cannot_carry_it(self):
+        results = [Result("s", OK, posts=[], searched=100)]
+        entries = self._entries(4, 0.45) + [{"post": post(url="star"),
+                                             "similarity": 0.95}]
+        summary = verdict.summarise(results, entries, [], [])
+        self.assertLess(summary["quality"], verdict.WEAK_SIMILARITY)
+
+    def test_no_contactable_leads_caps_the_signal(self):
+        # Pages and stale posts are consolation. If nobody can be replied to,
+        # the answer cannot be "worth a conversation" whatever the count says.
+        results = [Result("s", OK, posts=[], searched=50)]
+        summary = verdict.summarise(results, [], self._entries(10, 0.85), [])
+        self.assertEqual(summary["signal"], "WEAK")
+        self.assertIn("reply to", summary["caveat"])
+
+    def test_signal_unchanged_when_no_similarity_available(self):
+        # Keyword-only runs have no similarity scores. They must not be
+        # downgraded for lacking data they were never going to have.
+        results = [Result("s", OK, posts=[], searched=100)]
+        plain = [{"post": post(url=f"u{i}")} for i in range(5)]
+        summary = verdict.summarise(results, plain, [], [])
+        self.assertEqual(summary["signal"], "MODERATE")
+        self.assertIsNone(summary["quality"])
+
+    def test_explain_names_the_downgrade_reason(self):
+        text = verdict.explain("WEAK", 0.03, 100, caveat="matches are off-topic")
+        self.assertIn("Downgraded", text)
+        self.assertIn("off-topic", text)
+
     def test_explain_is_a_sentence_for_every_signal(self):
         for signal in ("UNKNOWN", "NONE", "WEAK", "MODERATE", "STRONG"):
             text = verdict.explain(signal, 0.03, 100)

@@ -145,8 +145,11 @@ def main():
     print(f"VERDICT: {summary['signal']} signal{stale}")
     print(f"  {summary['matched']} of {summary['searched']} posts matched "
           f"({summary['rate'] * 100:.1f}%)")
-    print(wrap(explain(summary["signal"], summary["rate"], summary["searched"]),
-               indent="  "))
+    if summary.get("quality") is not None:
+        print(f"  match quality: {summary['quality']:.2f} "
+              f"({summary['people']} recent enough to reply to)")
+    print(wrap(explain(summary["signal"], summary["rate"], summary["searched"],
+                       summary.get("caveat", "")), indent="  "))
 
     if summary["themes"]:
         print("\n  What the other posts are about instead:")

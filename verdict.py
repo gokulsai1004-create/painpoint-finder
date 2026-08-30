@@ -150,6 +150,20 @@ def themes(posts, query_terms, top=6, min_count=3):
     return found[:top]
 
 
+# Below this, a "match" shares words with the query but is not about the same
+# thing. Calibrated against real runs: a genuine client-payment complaint scored
+# 0.76, a care client refusing dentures 0.66, a car lease 0.50.
+WEAK_SIMILARITY = 0.62
+
+LEVELS = ["NONE", "WEAK", "MODERATE", "STRONG"]
+
+
+def _downgrade(signal, steps=1):
+    if signal not in LEVELS:
+        return signal
+    return LEVELS[max(0, LEVELS.index(signal) - steps)]
+
+
 def summarise(results, leads, pages, terms):
     """Everything the user needs to judge the answer, as plain data."""
     usable = [r for r in results if r.usable]
@@ -174,6 +188,28 @@ def summarise(results, leads, pages, terms):
     else:
         signal = "STRONG"
 
+    # Count alone is not the answer. A heavy-industry search matched 4 of 123
+    # posts and reported MODERATE - "worth a conversation" - when the top result
+    # was a nine-year-old photo. Quantity said yes; quality said no, and the
+    # verdict only asked quantity.
+    sims = [e["similarity"] for e in leads + pages if "similarity" in e]
+    quality = None
+    caveat = ""
+
+    if sims:
+        quality = sorted(sims)[len(sims) // 2]  # median, so one good hit cannot carry it
+        if quality < WEAK_SIMILARITY and signal not in ("UNKNOWN", "NONE"):
+            signal = _downgrade(signal)
+            caveat = ("matches share words with your query but are mostly "
+                      "about something else")
+
+    # Nobody to reply to is a ceiling on how strong this can be, whatever the
+    # count says. Leads are the product; pages are consolation.
+    if not leads and signal in ("MODERATE", "STRONG"):
+        signal = "WEAK"
+        caveat = caveat or ("nothing recent enough to reply to - only pages and "
+                            "old posts")
+
     return {
         "searched": total_searched,
         "matched": matched,
@@ -181,21 +217,32 @@ def summarise(results, leads, pages, terms):
         "pages": len(pages),
         "rate": rate,
         "signal": signal,
+        "quality": quality,
+        "caveat": caveat,
         "themes": themes(unmatched, terms) if unmatched else [],
     }
 
 
-def explain(signal, rate, searched):
+def explain(signal, rate, searched, caveat=""):
     """One honest sentence about what the number means."""
     if signal == "UNKNOWN":
         return "Nothing was searched, so there is no signal either way."
     if signal == "NONE":
         return (f"Nobody in {searched} posts is describing this. That is real "
                 "evidence, though only for the places searched.")
+
     if signal == "WEAK":
-        return (f"{rate * 100:.1f}% of posts matched. That is thin - the same "
+        base = (f"{rate * 100:.1f}% of posts matched. That is thin - the same "
                 "range that killed this tool's own first idea.")
-    if signal == "MODERATE":
-        return f"{rate * 100:.1f}% of posts matched. Enough to be worth a conversation."
-    return (f"{rate * 100:.1f}% of posts matched. People are actively talking "
-            "about this.")
+    elif signal == "MODERATE":
+        base = f"{rate * 100:.1f}% of posts matched. Enough to be worth a conversation."
+    else:
+        base = (f"{rate * 100:.1f}% of posts matched. People are actively "
+                "talking about this.")
+
+    # The downgrade reason matters more than the label. "WEAK" alone invites a
+    # shrug; "WEAK because the matches are about something else" tells you your
+    # query is wrong rather than your idea.
+    if caveat:
+        base += f" Downgraded: {caveat}."
+    return base

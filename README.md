@@ -200,7 +200,7 @@ SBIR solicitations for anything defence or government adjacent.
 python test_painpoint.py
 ```
 
-35 tests, all offline — a test that needs Reddit to be up is a test that fails
+37 tests, all offline — a test that needs Reddit to be up is a test that fails
 for reasons that are not bugs.
 
 ## Licence

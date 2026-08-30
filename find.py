@@ -25,6 +25,7 @@ import sources.hackernews  # noqa: F401 - importing registers the source
 import sources.reddit  # noqa: F401
 import sources.web  # noqa: F401
 from leads import has_negation, rank
+from verdict import explain, summarise
 
 
 def coverage(results):
@@ -103,6 +104,25 @@ def main():
         print("  identical keywords. Expect some results to be the inverse of")
         print("  what you asked. Rephrasing positively helps: try \"unpaid\"")
         print("  rather than \"not paid\".")
+
+    # The verdict goes before the leads. Seven matches reads as promising until
+    # you learn it was seven out of nine hundred, and by then you have already
+    # started planning what to build.
+    summary = summarise(results, leads, pages, terms)
+    print("\n" + "=" * 78)
+    print(f"VERDICT: {summary['signal']} signal")
+    print(f"  {summary['matched']} of {summary['searched']} posts matched "
+          f"({summary['rate'] * 100:.1f}%)")
+    print(wrap(explain(summary["signal"], summary["rate"], summary["searched"]),
+               indent="  "))
+
+    if summary["themes"]:
+        print("\n  What the other posts are about instead:")
+        for phrase, count in summary["themes"]:
+            print(f"    {count:4d}  {phrase}")
+        print("\n  A louder theme than yours is worth a look. This is how this")
+        print("  tool's own author found his second idea after the first died.")
+    print("=" * 78)
 
     if not leads and not pages:
         print("\nNothing found.")

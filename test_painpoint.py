@@ -5,7 +5,7 @@ Everything here runs offline. The network paths are covered by asserting on
 the shapes they return rather than by calling them, because a test that needs
 Reddit to be up is a test that fails for reasons that are not bugs.
 
-Run:  py -3 test_painpoint.py
+Run:  python test_painpoint.py
 """
 
 import unittest
@@ -409,13 +409,13 @@ class TestSourceContract(unittest.TestCase):
         import sources.github  # noqa: F401
         import sources.hackernews  # noqa: F401
         import sources.reddit  # noqa: F401
-        import sources.stackoverflow  # noqa: F401
+        import sources.stackexchange  # noqa: F401
         import sources.web  # noqa: F401
         return sources
 
     def test_every_source_is_registered(self):
         sources = self._all_sources()
-        for name in ("github", "hackernews", "reddit", "stackoverflow", "web"):
+        for name in ("github", "hackernews", "reddit", "stackexchange", "web"):
             self.assertIn(name, sources.available())
 
     def test_a_raising_source_becomes_error_not_a_crash(self):

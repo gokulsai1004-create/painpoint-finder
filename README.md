@@ -88,7 +88,7 @@ a minute. Every run after that is offline. Skip it entirely with
 |---|---|---|
 | Reddit | People describing problems, via public RSS | no |
 | Hacker News | Stories **and comments** — comments are where complaints live | no |
-| Stack Overflow | Developers stuck on a real problem, via the public API | no |
+| Stack Exchange | 8 sites at once: The Workplace, Engineering, Law, Medical Sciences, Academia, Project Management, Money, Stack Overflow | no |
 | GitHub issues | Someone saying what a tool they *already use* cannot do | no |
 | Web (DuckDuckGo) | Fallback so no query ever returns a false zero | no |
 
@@ -96,6 +96,27 @@ GitHub issues are worth calling out. A forum complaint is someone annoyed; a
 filed issue is someone who installed the thing, hit the wall, and cared enough
 to write it down against the project. The gap between what a tool does and what
 someone needed is sitting in the open.
+
+## Industries outside tech
+
+Reddit, Hacker News and GitHub all skew heavily toward software, so early
+versions gave a developer hundreds of posts and a nurse or a plant engineer a
+coverage warning. Their complaints exist. They are just not on Hacker News.
+
+Stack Exchange fixes most of that. It runs 365 sites on one API, and this
+searches eight of them chosen for breadth rather than volume — **The Workplace**
+above all, which is client, manager, colleague and scope problems across every
+industry at once.
+
+The difference is not subtle. Searching *"nurses burnout understaffed hospital
+shifts"* returned nothing usable before and now surfaces *"How to convince
+management that our department is understaffed"* — a real person with the exact
+problem.
+
+Still thin for genuinely niche B2B: heavy industry, defence procurement,
+specialist manufacturing. Those complaints live in trade publications and
+tender documents, and no source here reads those yet. The tool says so rather
+than guessing — see the coverage line.
 
 ## Ranking
 

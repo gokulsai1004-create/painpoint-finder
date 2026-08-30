@@ -1,0 +1,189 @@
+"""
+The Stack Exchange network, not just Stack Overflow.
+
+This is the answer to the tool's worst structural weakness: four of its five
+sources were tech-shaped, so a cement plant manager, a nurse or a lab
+researcher got thin results and a coverage warning, while a developer got
+hundreds of posts. Their complaints exist. They are just not on Hacker News.
+
+Stack Exchange runs 365 sites on one API. Engineering, Law, Medical Sciences,
+Academia, Aviation, Chemistry, Personal Finance, Project Management - all with
+the same anonymous access as Stack Overflow, and all full of people describing
+a specific problem in detail, because that is the only kind of post the format
+allows.
+
+The Workplace deserves its own mention. It is job, colleague, client and
+management problems across every industry at once, which is exactly the
+material the other sources cannot reach.
+
+Replaces the stackoverflow source, which is now just one site among these.
+"""
+
+import time
+from html import unescape
+import re
+
+import requests
+
+from . import BLOCKED, ERROR, OK, Post, Result, register
+
+API = "https://api.stackexchange.com/2.3/search/advanced"
+
+HEADERS = {"User-Agent": "painpoint-finder/0.1 (research tool)"}
+
+# Chosen for breadth of industry rather than volume. Ordered by how much ground
+# each covers that the other sources do not: The Workplace first because it
+# spans every industry, Stack Overflow last because Hacker News and GitHub
+# already cover software heavily.
+SITES = [
+    "workplace",        # any job: clients, managers, colleagues, scope, pay
+    "engineering",      # mechanical, civil, industrial, manufacturing
+    "medicalsciences",  # clinical and health
+    "law",              # contracts, disputes, compliance
+    "academia",         # research, funding, supervision
+    "pm",               # project management, delivery, scope
+    "money",            # personal finance, invoicing, tax
+    "stackoverflow",    # software
+]
+
+# The anonymous quota is 300 requests/day across everything hitting this IP.
+# One request per site means a search costs len(SITES); the deadline stops a
+# slow run from spending the budget on sites it will not reach in time.
+DEADLINE_SECONDS = 25
+PER_REQUEST_TIMEOUT = 8
+
+BLOCK_TAG = re.compile(r"</?(p|br|li|blockquote|pre)[^>]*>", re.IGNORECASE)
+TAGS = re.compile(r"<[^>]+>")
+
+
+def _strip_html(fragment):
+    """Bodies come back as rendered HTML. Keep paragraph breaks so best_quote()
+    still has real sentences to split on; drop everything else."""
+    if not fragment:
+        return ""
+    with_breaks = BLOCK_TAG.sub("\n", fragment)
+    return unescape(TAGS.sub("", with_breaks)).strip()
+
+
+def _search_site(site, search_text, limit, deadline):
+    """Query one site. Returns (posts, status, detail)."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 1:
+        return [], "skipped", "out of time"
+
+    try:
+        resp = requests.get(
+            API,
+            params={
+                "order": "desc",
+                "sort": "relevance",
+                "q": search_text,
+                "site": site,
+                "filter": "withbody",
+                "pagesize": min(limit, 100),
+            },
+            headers=HEADERS,
+            timeout=min(PER_REQUEST_TIMEOUT, remaining),
+        )
+    except requests.RequestException as exc:
+        return [], ERROR, f"{site}: network: {exc}"
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        return [], ERROR, f"{site}: could not parse response"
+
+    # Stack Exchange reports throttling and bad requests inside a 200 body, not
+    # only via status code. An error_id here means we never actually searched,
+    # whatever the HTTP status says.
+    if "error_id" in payload:
+        message = payload.get("error_message", "unknown error")
+        if payload.get("error_name") == "throttle_violation":
+            return [], BLOCKED, f"{site}: {message}"
+        return [], ERROR, f"{site}: {message}"
+
+    if resp.status_code == 429:
+        return [], BLOCKED, f"{site}: rate-limited"
+    if resp.status_code >= 400:
+        return [], ERROR, f"{site}: HTTP {resp.status_code}"
+
+    posts = []
+    for item in payload.get("items", []):
+        owner = item.get("owner") or {}
+        posts.append(Post(
+            source=f"stackexchange {site}",
+            title=unescape(item.get("title", "")),
+            body=_strip_html(item.get("body", "")),
+            url=item.get("link", ""),
+            author=owner.get("display_name", ""),
+            created_utc=float(item.get("creation_date") or 0),
+            replies=int(item.get("answer_count") or 0),
+        ))
+
+    return posts, OK, ""
+
+
+def search(query, limit=100):
+    """Search across the Stack Exchange network for people describing a problem."""
+    from leads import keywords  # local import avoids a circular import
+
+    terms = keywords(query)
+    ranked = sorted(terms, key=len, reverse=True)
+
+    # Stack Exchange ANDs every term, and these are small sites. Measured:
+    # "understaffed burnout hospital nurses" returns nothing on The Workplace,
+    # "burnout understaffed" returns results, and "understaffed" alone returns
+    # the best ones - "How to convince management that our department is
+    # understaffed". Two terms first, then one, because narrow-then-widen finds
+    # the precise hit when it exists without reporting zero when it does not.
+    attempts = []
+    if len(ranked) >= 2:
+        attempts.append(" ".join(ranked[:2]))
+    if ranked:
+        attempts.append(ranked[0])
+    if not attempts:
+        attempts = [query]
+
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    merged = {}
+    blocked, errors, searched_sites = [], [], []
+
+    for site in SITES:
+        reached = False
+        for search_text in attempts:
+            posts, status, detail = _search_site(site, search_text, limit, deadline)
+            if status == OK:
+                reached = True
+                for post in posts:
+                    merged.setdefault(post.url, post)
+                if posts:
+                    break  # a narrower hit is better; do not widen further
+            elif status == BLOCKED:
+                blocked.append(detail)
+                break
+            elif status == ERROR:
+                errors.append(detail)
+                break
+        if reached:
+            searched_sites.append(site)
+
+    if merged or searched_sites:
+        # Reached at least one site. Partial coverage is honest coverage: the
+        # detail names what was and was not searched.
+        detail = ""
+        if blocked or errors:
+            detail = f"searched {len(searched_sites)}/{len(SITES)} sites"
+        return Result("stackexchange", OK, posts=list(merged.values()),
+                      searched=len(merged), detail=detail)
+
+    # Nothing reached at all. Whether that is "refused" or "broke" changes what
+    # the user should conclude, so the distinction survives to the top.
+    if blocked:
+        return Result("stackexchange", BLOCKED, detail="; ".join(blocked[:2]))
+    if errors:
+        return Result("stackexchange", ERROR, detail="; ".join(errors[:2]))
+    return Result("stackexchange", BLOCKED,
+                  detail=f"ran out of time after {DEADLINE_SECONDS}s")
+
+
+register("stackexchange", search)

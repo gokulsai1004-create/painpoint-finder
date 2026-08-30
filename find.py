@@ -1,7 +1,7 @@
 """
 painpoint-finder — find the people who have the problem, not just the problem.
 
-    py -3 find.py "freelancers not getting paid for extra work"
+    python find.py "client refuses to pay for revisions"
 
 Every other tool in this space stops at a report. This one ends at a person and
 something to say to them. It never sends anything: it drafts, you edit, you post.
@@ -24,7 +24,7 @@ import sources
 import sources.github  # noqa: F401 - importing registers the source
 import sources.hackernews  # noqa: F401
 import sources.reddit  # noqa: F401
-import sources.stackoverflow  # noqa: F401
+import sources.stackexchange  # noqa: F401
 import sources.web  # noqa: F401
 from leads import has_negation, rank
 from verdict import explain, summarise

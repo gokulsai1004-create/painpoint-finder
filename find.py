@@ -77,9 +77,24 @@ def main():
     level, ok, blocked, errored = coverage(results)
 
     # Coverage first, always. It frames everything below it.
+    # Staleness belongs on the headline, not only in the per-source detail.
+    # These are the two lines a user actually acts on, and a run where nothing
+    # was searched just now must not read identically to a live one.
+    cached = [r for r in ok if r.from_cache]
+    if cached and len(cached) == len(ok):
+        level = f"{level} (ALL CACHED)"
+    elif cached:
+        level = f"{level} (PARTLY CACHED)"
+
     print(f"COVERAGE: {level}")
     for r in ok:
-        print(f"  searched {r.source} ({r.searched} posts)")
+        if r.from_cache:
+            # Never let a cached answer look fresh. The tool's whole claim is
+            # honesty about the strength of its own evidence.
+            print(f"  {r.source}: CACHED from {r.from_cache} "
+                  f"({r.searched} posts) - live search was refused")
+        else:
+            print(f"  searched {r.source} ({r.searched} posts)")
     for r in blocked:
         print(f"  COULD NOT SEARCH {r.source} - {r.detail}")
     for r in errored:
@@ -109,8 +124,9 @@ def main():
     # you learn it was seven out of nine hundred, and by then you have already
     # started planning what to build.
     summary = summarise(results, leads, pages, terms)
+    stale = " (from cached results)" if cached else ""
     print("\n" + "=" * 78)
-    print(f"VERDICT: {summary['signal']} signal")
+    print(f"VERDICT: {summary['signal']} signal{stale}")
     print(f"  {summary['matched']} of {summary['searched']} posts matched "
           f"({summary['rate'] * 100:.1f}%)")
     print(wrap(explain(summary["signal"], summary["rate"], summary["searched"]),

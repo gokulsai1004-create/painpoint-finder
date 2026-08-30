@@ -208,5 +208,91 @@ class TestThemes(unittest.TestCase):
         self.assertIn("payment terms", found)
 
 
+class TestCache(unittest.TestCase):
+    """The cache exists to rescue a rate-limited run. It must never rescue one
+    by pretending stale data is fresh, and it must never cache a failure."""
+
+    def setUp(self):
+        import cache
+        self.cache = cache
+        self.query = f"cache test {id(self)}"
+
+    def tearDown(self):
+        for source in ("t_ok", "t_blocked", "t_error", "t_fail"):
+            path = self.cache._path(source, self.query)
+            if path.exists():
+                path.unlink()
+
+    def _ok(self, source):
+        return Result(source, OK, posts=[post(title="T", url="u1")], searched=1)
+
+    def test_round_trip(self):
+        self.cache.save(self._ok("t_ok"), self.query)
+        got, age = self.cache.load("t_ok", self.query)
+        self.assertIsNotNone(got)
+        self.assertEqual(len(got.posts), 1)
+        self.assertLess(age, 60)
+
+    def test_failures_are_never_cached(self):
+        # Caching a rate-limit would serve the failure back for 30 minutes.
+        self.cache.save(Result("t_fail", BLOCKED, detail="429"), self.query)
+        got, _ = self.cache.load("t_fail", self.query)
+        self.assertIsNone(got)
+
+    def test_blocked_source_falls_back_and_is_labelled(self):
+        import sources
+        self.cache.save(self._ok("t_blocked"), self.query)
+        sources.register("t_blocked",
+                         lambda q, limit: Result("t_blocked", BLOCKED, detail="429"))
+        result = sources.run("t_blocked", self.query)
+        self.assertTrue(result.usable)
+        # Unlabelled cached data would be the tool lying about its evidence.
+        self.assertTrue(result.from_cache)
+
+    def test_errored_source_does_not_fall_back(self):
+        # An ERROR may mean the source changed shape. Serving old data would
+        # hide a real break behind a stale success.
+        import sources
+        self.cache.save(self._ok("t_error"), self.query)
+        sources.register("t_error",
+                         lambda q, limit: Result("t_error", ERROR, detail="broke"))
+        result = sources.run("t_error", self.query)
+        self.assertFalse(result.usable)
+
+    def test_expired_entry_is_a_miss(self):
+        import json
+        import time as _t
+        self.cache.save(self._ok("t_ok"), self.query)
+        path = self.cache._path("t_ok", self.query)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["saved_at"] = _t.time() - self.cache.TTL_SECONDS - 10
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        got, _ = self.cache.load("t_ok", self.query)
+        self.assertIsNone(got)
+
+    def test_long_queries_do_not_collide(self):
+        # The bug this encodes: an 80-character slug meant two long queries
+        # sharing a prefix got one file, and the second search was handed the
+        # first one's posts labelled as cached.
+        base = ("freelance designers who lose money on unpaid revision rounds "
+                "with difficult clients in agency work ")
+        self.assertNotEqual(
+            self.cache._key("reddit", base + "alpha"),
+            self.cache._key("reddit", base + "beta"),
+        )
+
+    def test_punctuation_does_not_collide(self):
+        self.assertNotEqual(
+            self.cache._key("reddit", "client-refuses-pay"),
+            self.cache._key("reddit", "client refuses pay"),
+        )
+
+    def test_query_normalised_so_spacing_and_case_share_an_entry(self):
+        self.cache.save(self._ok("t_ok"), "Client  REFUSES to Pay")
+        got, _ = self.cache.load("t_ok", "client refuses to pay")
+        self.assertIsNotNone(got)
+        self.cache._path("t_ok", "client refuses to pay").unlink()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

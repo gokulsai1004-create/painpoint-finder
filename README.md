@@ -99,6 +99,23 @@ prints before the leads for that reason.
 blog post does not. Results are split, and pages explicitly get no draft
 reply — writing an opener for an article nobody reads would be theatre.
 
+## Caching
+
+Rate limits are what you actually hit while refining a query: you rerun a
+search five times adjusting the wording, and the fifth gets refused. When a
+source is blocked, results from a recent identical search are used instead —
+and always labelled:
+
+```
+COVERAGE: MEDIUM (PARTLY CACHED)
+  reddit: CACHED from 12 minutes ago (194 posts) - live search was refused
+```
+
+Cached runs mark the verdict line too. A stale answer presented as fresh is
+worse than no answer. Failures are never cached, and an `ERROR` never falls
+back — only a rate limit does, because an error might mean the source changed
+shape and serving old data would hide a real break.
+
 ## What it will not do
 
 **It never sends anything.** It surfaces a handful of leads and drafts
@@ -146,7 +163,7 @@ government adjacent.
 py -3 test_painpoint.py
 ```
 
-22 tests, all offline — a test that needs Reddit to be up is a test that fails
+30 tests, all offline — a test that needs Reddit to be up is a test that fails
 for reasons that are not bugs.
 
 ## Licence

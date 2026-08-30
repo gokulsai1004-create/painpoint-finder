@@ -200,6 +200,31 @@ class TestThemes(unittest.TestCase):
         for junk in ("how many", "everyone said", "many people"):
             self.assertNotIn(junk, phrases)
 
+    def test_query_plurals_and_verb_endings_excluded(self):
+        # A real run for "students struggle" reported "student struggling" as
+        # the top thing people were talking about INSTEAD - 45 hits, first in
+        # the list. It was the query wearing different endings.
+        posts = [post(body="student struggling with money problems", url=f"u{i}")
+                 for i in range(5)]
+        phrases = [p for p, _ in verdict.themes(posts, ["students", "struggle"],
+                                                min_count=2)]
+        for phrase in phrases:
+            self.assertNotIn("student", phrase)
+            self.assertNotIn("struggl", phrase)
+
+    def test_stem_collapses_common_endings(self):
+        pairs = [
+            ("students", "student"),
+            ("struggling", "struggle"),
+            ("refuses", "refuse"),
+            ("paying", "pay"),
+            ("companies", "company"),
+            ("revisions", "revision"),
+        ]
+        for a, b in pairs:
+            self.assertEqual(verdict._stem(a), verdict._stem(b),
+                             f"{a} and {b} should share a stem")
+
     def test_urls_are_not_themes(self):
         # Real runs reported "auto webp", "format png" and "preview redd" as
         # what people were talking about. Those are Reddit image-link query

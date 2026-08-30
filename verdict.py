@@ -27,8 +27,9 @@ NOISE = STOPWORDS | COMMON | {
     "also", "still", "back", "going", "maybe", "probably", "actually",
     "pretty", "very", "quite", "little", "lot", "lots", "bit", "kind", "sort",
     "always", "never", "sometimes", "often", "usually", "already", "yet",
-    # question words and quantifiers - these form the junk pairs
+    # question words, prepositions and quantifiers - these form the junk pairs
     "how", "why", "what", "when", "where", "who", "which", "whose",
+    "out", "there", "here", "over", "under", "into", "onto", "off",
     "many", "most", "some", "any", "all", "both", "each", "few", "other",
     "another", "same", "different", "several", "enough", "less", "least",
     # people-in-general
@@ -69,6 +70,38 @@ def _words(text):
     return [w for w in WORD.findall(text.lower()) if w not in NOISE]
 
 
+def _stem(word):
+    """Crudest useful stemmer: enough to see that "students" and "student" are
+    the same word.
+
+    Without this the query leaks straight back into the themes. A search for
+    "students struggle" reported "student struggling" as the top thing people
+    were talking about INSTEAD - 45 hits, first in the list, and it was the
+    query wearing different endings.
+
+    Deliberately not a real stemmer. This only has to collapse plurals and
+    common verb endings well enough to compare two words, and a dependency
+    would cost more than it is worth.
+    """
+    base = word
+    for suffix in ("ingly", "edly", "ing", "ies", "ied", "es", "ed", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            base = word[: -len(suffix)]
+            # "ies" -> "y" so "companies" and "company" agree
+            if suffix in ("ies", "ied"):
+                return base + "y"
+            break
+
+    # Then drop a trailing "e", or the endings disagree with each other:
+    # "struggling" strips to "struggl" while "struggle" stays whole, and
+    # "refuses" strips to "refus" while "refuse" stays whole. Both pairs are
+    # the same word and must land on the same stem.
+    if base.endswith("e") and len(base) >= 4:
+        base = base[:-1]
+
+    return base
+
+
 def themes(posts, query_terms, top=6, min_count=3):
     """What the non-matching posts are actually about.
 
@@ -76,7 +109,10 @@ def themes(posts, query_terms, top=6, min_count=3):
     and "paid" barely does. Single words fill in only when there are not enough
     pairs to be useful.
     """
-    query_set = set(query_terms)
+    # Compared on stems, so "students" in the query also excludes "student"
+    # and "struggle" also excludes "struggling". Matching on exact words let
+    # the query reappear as the top alternative to itself.
+    query_stems = {_stem(t) for t in query_terms}
 
     pair_counts = Counter()
     word_counts = Counter()
@@ -91,12 +127,12 @@ def themes(posts, query_terms, top=6, min_count=3):
             # A pair containing any query word is the same topic restated, not
             # an alternative to it. "prevent scope" is not what people are
             # talking about INSTEAD of scope.
-            if a in query_set or b in query_set:
+            if _stem(a) in query_stems or _stem(b) in query_stems:
                 continue
             seen_pairs.add(f"{a} {b}")
 
         for w in words:
-            if w not in query_set:
+            if _stem(w) not in query_stems:
                 seen_words.add(w)
 
         pair_counts.update(seen_pairs)

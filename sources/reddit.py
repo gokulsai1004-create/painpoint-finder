@@ -55,12 +55,22 @@ class _TextExtractor(HTMLParser):
         return joined.strip()
 
 
+# Every RSS body ends with Reddit's own furniture: "submitted by /u/name to
+# r/sub [link] [comments]". Left in, it becomes evidence: a real run reported
+# "appreciated submitted" as a top theme, which is the footer colliding with
+# the last word of the post.
+FOOTER = re.compile(
+    r"\s*submitted\s+by\s*/?u/\S+.*$|\s*\[link\]\s*\[comments\]\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _html_to_text(html):
     if not html:
         return ""
     parser = _TextExtractor()
     parser.feed(unescape(html))
-    return parser.text()
+    return FOOTER.sub("", parser.text()).strip()
 
 
 def _epoch(iso):

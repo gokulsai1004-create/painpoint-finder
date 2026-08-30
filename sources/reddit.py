@@ -113,35 +113,51 @@ def _parse(xml_text):
     return posts
 
 
-def _fetch(query, limit):
+def _fetch(query, limit, deadline=None):
     """One search request, with backoff. Returns a Result.
 
-    Backoff numbers come from watching reddit-mentor run: anonymous RSS has no
-    documented limit but 429s do appear under a burst, and waiting is cheaper
-    than losing the source for the run.
+    `deadline` is a time.monotonic() value this call must not run past. It is
+    checked before every sleep, not just between calls: one variant's backoff
+    can exceed the whole budget on its own, and a caller-level check cannot
+    interrupt a sleep already in progress.
+
+    Backoff starts small because a human is waiting. reddit-mentor can afford
+    to wait out a 429 since it runs unattended on a schedule; this cannot.
     """
     url = f"{BASE}/search.rss"
     params = {"q": query, "sort": "new", "limit": min(limit, 100)}
-    wait = 8
+    wait = 3
+
+    def out_of_time():
+        return deadline is not None and time.monotonic() >= deadline
+
+    def sleep_or_give_up(seconds):
+        """Sleep, unless that would run past the deadline. True if we slept."""
+        if deadline is not None and time.monotonic() + seconds > deadline:
+            return False
+        time.sleep(seconds)
+        return True
 
     for attempt in range(4):
+        if out_of_time():
+            return Result("reddit", BLOCKED, detail="out of time before request")
+
         try:
-            resp = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
         except requests.RequestException as exc:
-            if attempt == 3:
+            if attempt == 3 or not sleep_or_give_up(wait):
                 return Result("reddit", ERROR, detail=f"network: {exc}")
-            time.sleep(wait)
             wait *= 2
             continue
 
         if resp.status_code == 429:
-            if attempt == 3:
-                # Out of retries. We never actually searched, and saying so is
-                # the whole point of the BLOCKED status.
-                return Result("reddit", BLOCKED,
-                              detail="rate-limited by Reddit after 4 attempts")
             retry_after = resp.headers.get("Retry-After")
-            time.sleep(float(retry_after) if retry_after else wait)
+            delay = float(retry_after) if retry_after else wait
+            if attempt == 3 or not sleep_or_give_up(delay):
+                # Either out of retries or out of time. Both mean we never
+                # searched, which is the whole point of the BLOCKED status.
+                return Result("reddit", BLOCKED,
+                              detail="rate-limited by Reddit")
             wait *= 2
             continue
 
@@ -207,6 +223,14 @@ def _query_variants(query):
     return out
 
 
+# Whole-source deadline. Without it the empty case is the slowest: no results
+# means no early exit, so every variant runs and every retry backs off, and the
+# answer "nobody has this problem" - the most valuable one this tool gives -
+# takes minutes to arrive. A partial search reported honestly beats a complete
+# one nobody waited for.
+DEADLINE_SECONDS = 45
+
+
 def search(query, limit=100):
     """Search Reddit for people talking about a problem.
 
@@ -218,9 +242,15 @@ def search(query, limit=100):
     merged = {}
     statuses = []
     searched = 0
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    ran_out_of_time = False
 
     for variant in _query_variants(query):
-        result = _fetch(variant, limit)
+        if time.monotonic() >= deadline:
+            ran_out_of_time = True
+            break
+
+        result = _fetch(variant, limit, deadline=deadline)
         statuses.append(result)
         if result.usable:
             searched += result.searched
@@ -239,6 +269,15 @@ def search(query, limit=100):
         return Result("reddit", BLOCKED, detail=detail)
     if statuses and all(r.status == ERROR for r in statuses):
         return Result("reddit", ERROR, detail=statuses[0].detail)
+
+    if ran_out_of_time:
+        # Searched some phrasings, ran out of time before the rest. An empty
+        # result here is genuinely inconclusive and must not read as "nobody
+        # has this problem".
+        return Result("reddit", BLOCKED, searched=searched,
+                      detail=f"ran out of time after {DEADLINE_SECONDS}s "
+                             f"({len(statuses)} of {len(_query_variants(query))} "
+                             f"phrasings tried)")
 
     return Result("reddit", OK, posts=[], searched=searched)
 

@@ -20,6 +20,7 @@ Replaces the stackoverflow source, which is now just one site among these.
 """
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 import re
 
@@ -145,27 +146,41 @@ def search(query, limit=100):
         attempts = [query]
 
     deadline = time.monotonic() + DEADLINE_SECONDS
-    merged = {}
-    blocked, errors, searched_sites = [], [], []
 
-    for site in SITES:
-        reached = False
+    def _one_site(site):
+        """Try the attempts against a single site, narrowest first."""
+        reached, found, why = False, [], None
         for search_text in attempts:
             posts, status, detail = _search_site(site, search_text, limit, deadline)
             if status == OK:
                 reached = True
-                for post in posts:
-                    merged.setdefault(post.url, post)
+                found.extend(posts)
                 if posts:
                     break  # a narrower hit is better; do not widen further
-            elif status == BLOCKED:
-                blocked.append(detail)
+            else:
+                why = (status, detail)
                 break
-            elif status == ERROR:
-                errors.append(detail)
-                break
+        return site, reached, found, why
+
+    # Eight sites in sequence made this the slowest source by far, and every
+    # request is independent waiting on the network. Threads turn the total
+    # from the sum into the slowest one.
+    with ThreadPoolExecutor(max_workers=len(SITES)) as pool:
+        outcomes = list(pool.map(_one_site, SITES))
+
+    merged = {}
+    blocked, errors, searched_sites = [], [], []
+
+    # Merged in SITES order rather than completion order, so results do not
+    # reshuffle between runs purely because the network was faster today.
+    for site, reached, found, why in outcomes:
         if reached:
             searched_sites.append(site)
+            for post in found:
+                merged.setdefault(post.url, post)
+        if why:
+            status, detail = why
+            (blocked if status == BLOCKED else errors).append(detail)
 
     if merged or searched_sites:
         # Reached at least one site. Partial coverage is honest coverage: the

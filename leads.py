@@ -284,6 +284,11 @@ SUBSTANCE_CHARS = 140
 # at 61).
 BARE_TITLE_CHARS = 45
 
+# How many candidates get the expensive semantic question. Comfortably more
+# than anyone asks for (-n defaults to 5) so the reranker can still reorder
+# meaningfully, small enough that a search stays under a minute.
+RERANK_CANDIDATES = 40
+
 
 def is_stale(post):
     if not post.created_utc:
@@ -359,14 +364,31 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
     if semantic_on and scored:
         import semantic
 
-        sims = semantic.similarities(query, [s["post"].text() for s in scored])
+        # Rerank a shortlist, not everything. Embedding runs on CPU and costs
+        # real time per post: adding Stack Exchange pushed a single search to
+        # over 850 posts, and the tool spent minutes embedding all of them to
+        # choose five. Keyword scores are cheap and good enough to decide which
+        # candidates deserve the expensive question, so only the best ones get
+        # asked. The rest keep their keyword score and rank below, which is
+        # where they were heading anyway.
+        scored.sort(key=lambda x: -x["score"])
+        shortlist = scored[:RERANK_CANDIDATES]
+
+        sims = semantic.similarities(query, [s["post"].text() for s in shortlist])
         if sims is not None:
-            top = max(s["score"] for s in scored)
-            for entry, sim in zip(scored, sims):
+            top = max(s["score"] for s in shortlist)
+            for entry, sim in zip(shortlist, sims):
                 entry["similarity"] = sim
                 entry["keyword_score"] = entry["score"]
                 entry["score"] = semantic.blend(entry["score"], sim, top)
                 entry["reranked"] = True
+
+            # Reranked entries now score on a 0-1000 scale while the tail is
+            # still on the raw keyword scale. Push the tail below them so the
+            # two scales cannot interleave and produce a nonsense order.
+            floor = min(e["score"] for e in shortlist)
+            for entry in scored[RERANK_CANDIDATES:]:
+                entry["score"] = min(entry["score"], floor - 1)
 
     scored.sort(key=lambda x: -x["score"])
 

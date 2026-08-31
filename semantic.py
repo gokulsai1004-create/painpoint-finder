@@ -32,8 +32,15 @@ import math
 MODEL = "BAAI/bge-small-en-v1.5"
 
 # Longer text dilutes the embedding: a 4000-word post averages its meaning into
-# mush. The opening is where someone states their problem.
-MAX_CHARS = 900
+# mush. The opening is where someone states their problem; the rest is
+# background, and "edit: thanks everyone".
+#
+# Also the single biggest cost in a run. Measured over 60 real posts averaging
+# 914 characters: 900 chars took 46 seconds, 300 took 19. Ranking order was
+# identical at both - a genuine payment complaint, a care client refusing
+# dentures and a car lease sorted the same way - so the longer window was
+# buying nothing but time.
+MAX_CHARS = 300
 
 _model = None
 _unavailable = False

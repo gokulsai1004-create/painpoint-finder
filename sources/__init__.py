@@ -124,7 +124,37 @@ def run(name, query, limit=100, use_cache=True):
 
 
 def run_all(query, limit=100, only=None, use_cache=True):
+    """Run every source at once.
+
+    These are five independent HTTP calls, and run in sequence the total is
+    their sum: Reddit's rate-limit backoff alone can be thirty seconds, and the
+    other four sit idle waiting for it. In parallel the total is the slowest
+    one instead. Threads rather than processes because the work is entirely
+    waiting on the network.
+
+    Order is preserved so output does not shuffle between runs for no reason.
+    """
     names = [n for n in available() if not only or n in only]
-    return [run(n, query, limit, use_cache=use_cache) for n in names]
+    if not names:
+        return []
+    if len(names) == 1:
+        return [run(names[0], query, limit, use_cache=use_cache)]
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(names)) as pool:
+        futures = [pool.submit(run, n, query, limit, use_cache) for n in names]
+        # run() already converts any exception into an ERROR Result, so a
+        # future here should not raise. Guarded anyway: one source must never
+        # take the whole search down, and that promise is worth keeping even
+        # against a failure mode that should be impossible.
+        results = []
+        for name, future in zip(names, futures):
+            try:
+                results.append(future.result())
+            except Exception as exc:  # noqa: BLE001 - deliberate boundary
+                results.append(Result(source=name, status=ERROR,
+                                      detail=f"{type(exc).__name__}: {exc}"))
+    return results
 
 

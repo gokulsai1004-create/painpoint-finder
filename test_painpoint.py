@@ -308,6 +308,39 @@ class TestRanking(unittest.TestCase):
         people, _, _, _ = leads.rank(self._results([a, b]), "cement kiln problem")
         self.assertEqual(len(people), 2)
 
+    def test_authorless_and_authored_posts_can_coexist(self):
+        # A crash, not a ranking flaw. `seen` held two key shapes - ("", url)
+        # for posts with no author and (author, words, time) for posts with one
+        # - and the comparison loop unpacked three values, so the first
+        # authorless post followed by any authored one took down the search.
+        #
+        # It never fired live because the web source is the one whose posts
+        # carry no author, and it was rate-limited every time this path ran.
+        # A blocked source was hiding a crash.
+        page = Post(source="web example.com", title="Client refuses to pay: a guide",
+                    body="advice about clients who refuse to pay",
+                    url="u1", author="", created_utc=time.time(), contactable=False)
+        person = post(title="Client refuses to pay me",
+                      body="Three months of invoices ignored and I am stuck.")
+        people, _, pages, _ = leads.rank(
+            [Result("test", OK, posts=[page, person], searched=2)],
+            "client refuses pay", semantic_on=False)
+        self.assertEqual(len(people), 1)
+        self.assertEqual(len(pages), 1)
+
+    def test_the_same_page_from_two_sources_collapses(self):
+        # What the authorless branch is actually for.
+        def page(source):
+            return Post(source=source, title="Client refuses to pay: a guide",
+                        body="advice about clients who refuse to pay",
+                        url="same-url", author="", created_utc=time.time(),
+                        contactable=False)
+        _, _, pages, _ = leads.rank(
+            [Result("test", OK, posts=[page("web a.com"), page("web b.com")],
+                    searched=2)],
+            "client refuses pay", semantic_on=False)
+        self.assertEqual(len(pages), 1)
+
     def test_pages_separated_from_people_and_get_no_draft(self):
         person = post(title="Client refuses to pay", body="me too", url="u1")
         page = post(title="Client refuses to pay: a guide", body="advice",

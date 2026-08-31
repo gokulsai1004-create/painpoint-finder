@@ -20,12 +20,28 @@ if hasattr(sys.stdout, "reconfigure"):
 elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-import sources
-import sources.github  # noqa: F401 - importing registers the source
-import sources.hackernews  # noqa: F401
-import sources.reddit  # noqa: F401
-import sources.stackexchange  # noqa: F401
-import sources.web  # noqa: F401
+# One required dependency, and the failure to install it should read like a
+# sentence rather than a stack trace. Someone trying this from a Show HN link
+# who skipped the pip line gets a wall of red otherwise, and concludes the tool
+# is broken rather than that they missed a step.
+try:
+    import sources
+    import sources.github  # noqa: F401 - importing registers the source
+    import sources.hackernews  # noqa: F401
+    import sources.reddit  # noqa: F401
+    import sources.stackexchange  # noqa: F401
+    import sources.web  # noqa: F401
+except ImportError as exc:
+    missing = getattr(exc, "name", None) or "a dependency"
+    print(f"\n  Missing dependency: {missing}\n", file=sys.stderr)
+    print("  This tool needs one package. Install it with:\n", file=sys.stderr)
+    print("      pip install requests\n", file=sys.stderr)
+    print("  If pip is not found, try:  python -m pip install requests",
+          file=sys.stderr)
+    print("  Optional, for much better ranking:  pip install fastembed\n",
+          file=sys.stderr)
+    raise SystemExit(2)
+
 from leads import has_negation, looks_like_an_idea, problem_in, rank
 from verdict import explain, summarise
 
@@ -74,6 +90,14 @@ def main():
     ap.add_argument("--no-semantic", action="store_true",
                     help="skip meaning-based reranking (faster, less accurate)")
     args = ap.parse_args()
+
+    # These land in list slices, where 0 and negatives quietly return nothing
+    # at all rather than failing. A user who typed -n 0 by accident would read
+    # that as "no leads found" and believe it.
+    if args.n < 1:
+        ap.error("-n must be at least 1")
+    if args.limit < 1:
+        ap.error("--limit must be at least 1")
 
     # An idea is not a problem. Someone arriving here has an idea - that is
     # why they came - but the people with the pain never use the builder's

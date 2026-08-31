@@ -514,6 +514,25 @@ TITLE_SAME_RATIO = 0.6
 TITLE_SAME_RATIO_NEARBY = 0.35
 
 
+class Seen:
+    """What has already been surfaced, in two shapes because there are two.
+
+    This was one set holding both kinds of key: a bare ("", url) pair for posts
+    with no author, and an (author, words, timestamp) triple for posts with one.
+    The comparison loop unpacked three values, so the first authorless post
+    followed by any authored one crashed the whole search.
+
+    It never fired in a live run because the web source is the one whose posts
+    carry no author, and it was rate-limited every time this path was exercised.
+    A blocked source was hiding a crash - which is the same failure this tool
+    exists to prevent, wearing a different hat.
+    """
+
+    def __init__(self):
+        self.urls = set()      # authorless posts, deduped by URL
+        self.people = []       # (author, title words, created_utc)
+
+
 def _already_seen(post, seen):
     """Has this person already been surfaced?
 
@@ -532,16 +551,18 @@ def _already_seen(post, seen):
     shows a duplicate the user can see and skip.
     """
     author = post.author.strip().lower()
+
     if not author:
-        # No author to be duplicated. Fall back to the URL so identical pages
-        # from two sources still collapse.
-        key = ("", post.url)
-        if key in seen:
+        # Nobody to be duplicated. Fall back to the URL so the same page
+        # arriving from two sources still collapses to one entry.
+        if post.url in seen.urls:
             return True
-        seen.add(key)
+        seen.urls.add(post.url)
         return False
 
-    for prior_author, prior_words, prior_time in list(seen):
+    words = _title_words(post.title)
+
+    for prior_author, prior_words, prior_time in seen.people:
         if prior_author != author:
             continue
         nearby = abs(post.created_utc - prior_time) <= CROSSPOST_WINDOW_SECONDS
@@ -549,13 +570,12 @@ def _already_seen(post, seen):
         # Jaccard rather than raw overlap - counting shared words alone called
         # "Cement Plant Kiln" and "Cement kiln maintenance problem" the same
         # post, because two words matched out of five distinct ones.
-        words = _title_words(post.title)
         if words and prior_words:
             overlap = len(words & prior_words) / len(words | prior_words)
             if overlap >= threshold:
                 return True
 
-    seen.add((author, _title_words(post.title), post.created_utc))
+    seen.people.append((author, words, post.created_utc))
     return False
 
 
@@ -578,7 +598,7 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
     terms = keywords(query)
     pairs = phrases(query)
     scored = []
-    seen = set()
+    seen = Seen()
 
     for result in results:
         if not result.usable:

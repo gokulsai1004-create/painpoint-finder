@@ -26,6 +26,7 @@ the tool, so everything degrades to keyword-only when fastembed is absent.
 """
 
 import math
+import sys
 
 # Small, fast, CPU-only, quantised. Good enough for ranking short posts, and
 # the download is small enough that a first run is not a wait people abandon.
@@ -61,6 +62,36 @@ def available():
         return False
 
 
+def _model_is_cached():
+    """Best effort: has the model already been downloaded?
+
+    Only used to decide whether to warn about a wait. Wrong in the cautious
+    direction prints one unnecessary line; wrong in the other direction is the
+    silent minute this exists to prevent, so anything uncertain counts as
+    not cached.
+    """
+    import os
+    import tempfile
+    from pathlib import Path
+
+    roots = []
+    for var in ("FASTEMBED_CACHE_PATH", "HF_HOME"):
+        if os.environ.get(var):
+            roots.append(Path(os.environ[var]))
+    roots += [
+        Path(tempfile.gettempdir()) / "fastembed_cache",   # fastembed's default
+        Path.home() / ".cache" / "fastembed",
+        Path.home() / ".cache" / "huggingface",
+    ]
+    for root in roots:
+        try:
+            if root.exists() and any(root.glob("**/*bge-small-en*")):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _load():
     """Load once, lazily. Importing fastembed alone costs a second or two, and
     a user who never reaches ranking should never pay it."""
@@ -70,6 +101,17 @@ def _load():
     if _unavailable:
         return None
     try:
+        # The first run downloads ~50MB and says nothing while it does. Someone
+        # trying this for the first time sees the program stop dead after the
+        # search and assumes it hung - the worst possible first impression, and
+        # entirely avoidable with one line. Printed to stderr so it never
+        # pollutes piped output.
+        if not _model_is_cached():
+            print("  Downloading the ranking model (~50MB, one time). This is "
+                  "the only\n  network call after the search itself - every run "
+                  "after this is offline.\n  Skip it with --no-semantic.",
+                  file=sys.stderr, flush=True)
+
         from fastembed import TextEmbedding
         _model = TextEmbedding(MODEL)
         return _model

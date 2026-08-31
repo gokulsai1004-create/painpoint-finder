@@ -1084,5 +1084,85 @@ class TestStackExchangeThrottle(unittest.TestCase):
         self.assertEqual(posts[0].author, "sam")
 
 
+
+class TestCodeReviewRegressions(unittest.TestCase):
+    """Three bugs a pre-launch review found, all of which the suite had missed."""
+
+    def test_a_complaint_that_starts_with_a_build_verb_is_left_alone(self):
+        # The worst of the three. English uses one word for the thing you
+        # intend to do and the thing happening to you, and the detector matched
+        # on the verb alone: "starting a business is harder than anyone says"
+        # became "is harder than anyone says" - the entire subject deleted -
+        # and the WEAK verdict that followed was an artefact of the rewrite.
+        for q in ("starting a business is harder than anyone says",
+                  "building a rota by hand every week is killing me",
+                  "making a living as a freelancer is impossible",
+                  "starting a company at 15 is a legal nightmare",
+                  "launching a product with no audience is brutal",
+                  "creating a website for my shop took three months",
+                  "making an app for my boss was the worst month of my life"):
+            self.assertFalse(leads.looks_like_an_idea(q), q)
+            self.assertEqual(leads.problem_in(q), q)
+
+    def test_real_ideas_are_still_recognised(self):
+        # The other half: tightening must not blind it.
+        for q, must_keep in (
+            ("i wanna build a startup that helps students find internships",
+             "internships"),
+            ("I want to build an app for freelancers to track invoices",
+             "freelancers"),
+            ("thinking about making a tool for nurses doing handover notes",
+             "nurses"),
+            ("an app for freelancers to track unpaid invoices", "invoices"),
+            ("building a platform for cement plant maintenance teams", "cement"),
+            ("creating an app for students to swap textbooks", "textbooks"),
+        ):
+            self.assertTrue(leads.looks_like_an_idea(q), q)
+            self.assertIn(must_keep, leads.problem_in(q), q)
+
+    def test_the_article_an_is_not_split_into_a_plus_n(self):
+        # Regex alternation is leftmost-first, so (a|an) matched the "a" of
+        # "an" and left a stray "n": the query above was rewritten to
+        # "n app for freelancers to track invoices".
+        got = leads.problem_in("I want to build an app for freelancers to track invoices")
+        self.assertFalse(got.startswith("n "), got)
+
+    def test_a_product_noun_must_be_the_object_of_the_building_verb(self):
+        # WEAK_BUILDER accepted any product noun within 60 characters, so
+        # ordinary complaints that merely mentioned software were filed as
+        # competitors, got no draft, and never reached the user as leads.
+        for title, body in (
+            ("Client wont pay",
+             "I made a complaint about the app I have to use at work."),
+            ("Warehouse chaos",
+             "We made a complaint to management about the tracker they forced on us."),
+            ("Scheduling hell",
+             "I am working on the rota every Sunday and the software we use is garbage."),
+        ):
+            self.assertFalse(leads.is_builder(post(title=title, body=body)), title)
+
+    def test_real_builders_survive_the_tightening(self):
+        for title, body in (
+            ("How are you handling cross-promos?",
+             "I got tired of Linktree so I built a small tool for it."),
+            ("I built a browser-based staff scheduler for restaurants",
+             "Where would you look for users?"),
+            ("Show HN: I built a rota tool", ""),
+        ):
+            self.assertTrue(leads.is_builder(post(title=title, body=body)), title)
+
+    def test_a_null_author_does_not_take_down_the_search(self):
+        # GitHub and Stack Exchange return the author key present-and-null for
+        # ghost/deleted accounts, and .get(key, "") only supplies the default
+        # when the key is ABSENT. One such record crashed every source's
+        # results, not just its own.
+        p = Post(source="github x/y", title="Client refuses to pay",
+                 body="Invoices ignored for months and I am stuck.",
+                 url="u", author=None, created_utc=time.time())
+        people, _, _, _ = leads.rank(
+            [Result("test", OK, posts=[p], searched=1)],
+            "client refuses pay", semantic_on=False)
+        self.assertEqual(len(people), 1)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

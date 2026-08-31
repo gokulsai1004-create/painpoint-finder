@@ -116,30 +116,31 @@ STRONG_BUILDER = re.compile(
     re.IGNORECASE,
 )
 
-# Words for the thing being built. Required near any weaker phrase below,
-# because "I'm testing", "we've made" and "just launched" all have entirely
-# innocent lives outside a product launch.
-PRODUCT_NOUN = re.compile(
-    r"\b(app|apps|tool|tools|platform|saas|product|startup|site|website|"
-    r"service|dashboard|extension|plugin|bot|mvp|software|prototype|"
-    r"landing page|waitlist|beta|demo|"
-    # The -er family, spelled out rather than matched by suffix: "manager" and
-    # "owner" and "worker" all end the same way, and only one of them is a
-    # product. "I built a browser-based staff scheduler" was being missed.
-    r"scheduler|tracker|planner|generator|calculator|organiser|organizer|"
-    r"crm|pos system|integration|marketplace|directory)\b",
-    re.IGNORECASE,
-)
-
-# Building language that is only builder language when a product is named in
-# the same breath. The 60-character window keeps them inside one clause: "I
-# built a staff scheduler" qualifies, "we made a complaint to management" does
-# not, and neither does "I am testing my hormone levels every month" - which is
-# a real post this filter previously handed back as somebody's competitor.
+# Building language that only counts when the product is the DIRECT OBJECT of
+# the verb. The previous version accepted any product noun within 60 characters,
+# which is not the same thing at all:
+#
+#     "I built a small tool for it"                        <- a builder
+#     "I made a complaint about the app I have to use"     <- a person in pain
+#
+# Both put a product noun near a building verb; only one is a competitor. The
+# loose window filed the second under "your competition", where it got no draft
+# and never reached the user as a lead - the silent deletion this whole filter
+# is supposed to avoid. Requiring "a/an/my/our" plus at most two words before
+# the noun keeps the product in the object slot, which is what actually
+# distinguishes them.
 WEAK_BUILDER = re.compile(
-    r"\b(i'?m|i am|we'?re|we are|i'?ve|we'?ve|i|we)\s+"
-    r"(testing|building|launching|working on|built|made|shipped|released)\b"
-    r"[^.!?\n]{0,60}",
+    r"\b(?:i'?m|i am|we'?re|we are|i'?ve|we'?ve|i|we)\s+"
+    r"(?:testing|building|launching|working on|built|made|shipped|released)\s+"
+    r"(?:an|a|my|our)\s+"
+    r"(?:[\w-]+\s+){0,2}"
+    r"(?:app|apps|tool|tools|platform|saas|product|startup|site|website|"
+    r"service|dashboard|extension|plugin|bot|mvp|software|prototype|"
+    r"landing page|waitlist|demo|"
+    # The -er family, spelled out rather than matched by suffix: "manager",
+    # "owner" and "worker" all end the same way and only one is a product.
+    r"scheduler|tracker|planner|generator|calculator|organiser|organizer|"
+    r"crm|marketplace|directory)\b",
     re.IGNORECASE,
 )
 
@@ -170,9 +171,8 @@ def is_builder(post):
     if STRONG_BUILDER.search(text):
         return True
 
-    for match in WEAK_BUILDER.finditer(text):
-        if PRODUCT_NOUN.search(match.group(0)):
-            return True
+    if WEAK_BUILDER.search(text):
+        return True
 
     # Source-specific, because the same words mean different things elsewhere:
     # "[feat]" in a Reddit title is rare and probably not a roadmap item.
@@ -232,27 +232,82 @@ def _weight(term, rare, common):
 # can search the problem hiding inside, and say that it did - searching the
 # wrong thing and quietly reporting WEAK is the same failure as a blocked
 # source reading as "nobody has this problem".
-IDEA_FRAMING = re.compile(
-    # "i wanna build a startup that ...", "thinking about making an app for ..."
-    r"^\s*(i\s+)?(wanna|want\s+to|plan\s+to|hope\s+to|going\s+to|"
-    r"thinking\s+(of|about)|trying\s+to|working\s+on|looking\s+to)?\s*"
-    r"(build|building|make|making|create|creating|launch|launching|"
+#
+# Split in two because a build verb ALONE is not evidence of an idea. English
+# uses the same word for the thing you intend to do and the thing that is
+# happening to you:
+#
+#     "i wanna build a rota tool"                 <- an idea
+#     "building a rota by hand is killing me"     <- a complaint
+#
+# The first version matched on the verb, so it rewrote the second into "rota by
+# hand is killing me" and told the author their complaint read like an idea.
+# Worse: "starting a business is harder than anyone says" became "is harder
+# than anyone says" - the whole subject deleted, and the resulting WEAK verdict
+# was an artefact of the rewrite rather than anything about the world.
+
+# Someone stating an intention. Unambiguous, so nothing further is required.
+IDEA_FIRST_PERSON = re.compile(
+    r"^\s*(?:"
+    r"(?:i|we)\s*(?:'m|'re|\s+am|\s+are|\s+have|\s+ve)?\s*"
+    r"(?:wanna|want\s+to|plan(?:ning)?\s+to|hope\s+to|hoping\s+to|"
+    r"would\s+like\s+to|going\s+to|intend\s+to|trying\s+to|looking\s+to|"
+    r"thinking\s+(?:of|about))?\s*"
+    r"|(?:thinking\s+(?:of|about)|trying\s+to|looking\s+to|planning\s+to)\s+"
+    r")"
+    r"(?:build|building|make|making|create|creating|launch|launching|"
     r"start|starting|develop|developing)\s+"
-    r"(a|an|the|my)?\s*"
-    r"(startup|start-up|app|application|tool|platform|saas|product|business|"
+    r"(?:an|a|the|my|our)?\s*"
+    r"(?:startup|start-up|app|application|tool|platform|saas|product|business|"
     r"company|website|site|service|system|mvp)?\s*"
-    r"(around|about|for|that|which|to|helps?|helping)?\s*"
-    # or a bare "an app for ...", "a tool that ..."
-    r"|^\s*(a|an)\s+"
-    r"(app|application|tool|platform|saas|product|website|service|system)\s+"
-    r"(for|that|to|which|helps?)\s*",
+    r"(?:around|about|for|that|which|to|helps?|helping)?\s*",
+    re.IGNORECASE,
+)
+
+# No stated intention - a bare gerund or a bare noun phrase. Far weaker
+# evidence, so it must name a product AND lead into what the product is for:
+# "building a platform for cement plant teams", "an app for freelancers".
+IDEA_BARE = re.compile(
+    r"^\s*(?:"
+    r"(?:build|building|make|making|create|creating|launch|launching|"
+    r"develop|developing)\s+(?:an|a|the|my|our)?\s*"
+    r"|(?:an|a)\s+"
+    r")"
+    r"(?:startup|start-up|app|application|tool|platform|saas|product|website|"
+    r"site|service|system|mvp|dashboard|marketplace)\s+"
+    r"(?:for|that|which|to|around|helps?|helping)\s+",
+    re.IGNORECASE,
+)
+
+# Verbs that turn the rest of a sentence into a statement about how something
+# went, which is a complaint however it began. "creating a website for my shop
+# TOOK three months" names a product and a purpose and is still somebody's bad
+# week. Only applied to the bare forms: an explicit "i wanna build" outranks
+# this, because "i wanna build a tool that fixes how broken invoicing IS" is
+# still an idea.
+COMPLAINT_VERB = re.compile(
+    r"\b(is|are|was|were|took|takes|cost|costs|feels?|felt|seems?|sucks?|"
+    r"hurts?|kills?|killing|killed|ruined|broke|broken|failed|hates?|hated|"
+    r"struggl\w*|impossible|nightmare)\b",
     re.IGNORECASE,
 )
 
 
+def _idea_match(query):
+    """The framing to strip, or None. First person wins; bare forms must both
+    name a product and not be describing how something went."""
+    m = IDEA_FIRST_PERSON.match(query)
+    if m and m.end() > 0:
+        return m
+    m = IDEA_BARE.match(query)
+    if m and not COMPLAINT_VERB.search(query[m.end():]):
+        return m
+    return None
+
+
 def looks_like_an_idea(query):
     """Is this describing what you would build rather than what hurts?"""
-    return bool(IDEA_FRAMING.match(query) and problem_in(query) != query)
+    return bool(_idea_match(query)) and problem_in(query) != query
 
 
 def problem_in(query):
@@ -263,7 +318,10 @@ def problem_in(query):
     hurt - so this narrows the search without pretending to have understood it.
     Saying so is find.py's job.
     """
-    stripped = IDEA_FRAMING.sub(" ", query, count=1).strip()
+    m = _idea_match(query)
+    if not m:
+        return query
+    stripped = query[m.end():].strip()
     # Refuse to return something with nothing left to search on. A query that
     # is entirely framing is better handled as-is than as an empty string.
     if not stripped or not [w for w in keywords(stripped)
@@ -550,7 +608,9 @@ def _already_seen(post, seen):
     over-eager rule here deletes a real lead silently, while an under-eager one
     shows a duplicate the user can see and skip.
     """
-    author = post.author.strip().lower()
+    # Coerced rather than assumed: a source handing back None here used to
+    # take down the whole run, and one bad record must never do that.
+    author = (post.author or "").strip().lower()
 
     if not author:
         # Nobody to be duplicated. Fall back to the URL so the same page

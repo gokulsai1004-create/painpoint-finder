@@ -124,7 +124,8 @@ def _search_site(site, search_text, limit, deadline):
             title=unescape(item.get("title", "")),
             body=_strip_html(item.get("body", "")),
             url=item.get("link", ""),
-            author=owner.get("display_name", ""),
+            # Present-and-null for deleted users; see the note in github.py.
+            author=owner.get("display_name") or "",
             created_utc=float(item.get("creation_date") or 0),
             replies=int(item.get("answer_count") or 0),
         ))

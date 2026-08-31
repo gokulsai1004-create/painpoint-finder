@@ -110,7 +110,11 @@ def search(query, limit=100):
             title=item.get("title", ""),
             body=body,
             url=item.get("html_url", ""),
-            author=user.get("login", ""),
+            # `or ""` and not just a default: GitHub returns the key present
+            # and null for ghost/deleted accounts, and .get() only
+            # supplies a default when the key is absent. A single null
+            # login used to crash the entire search, every source.
+            author=user.get("login") or "",
             created_utc=_epoch(item.get("created_at")),
             replies=int(item.get("comments") or 0),
         ))

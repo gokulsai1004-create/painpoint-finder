@@ -1,59 +1,96 @@
 # painpoint-finder
 
-**Find the people who have the problem, not just the problem.**
+**Describe the thing you want to build. Find out who actually has the problem,
+who already built it, and who you can talk to today.**
 
-You have an idea. Before you spend six months on it, you want to know whether
-anyone actually has the problem — and if they do, you want to talk to one of
-them today.
+You have an idea. Before you spend six months on it you want three answers: is
+this problem real, has somebody already solved it, and can I speak to one of
+these people this afternoon.
 
-Every tool in this space stops at a report. This one ends at a person and
-something to say to them.
-
-```
-python find.py "client refuses to pay for revisions"
-```
+Type the idea in your own words. It searches five public sources, tells you how
+loud the problem actually is, pulls out the people already building it, and
+hands you a drafted opener for the ones worth talking to.
 
 ```
-COVERAGE: MEDIUM
-  searched hackernews (6 posts)
-  searched reddit (194 posts)
-  searched web (10 posts)
+python find.py "i wanna build a tool that helps small restaurant owners manage their staff rotas"
+```
+
+```
+That reads like an idea, not a problem.
+  you asked : "i wanna build a tool that helps small restaurant owners manage their staff rotas"
+  I searched: "helps small restaurant owners manage their staff rotas"
+
+  People in pain do not use your words. They never write
+  "I need an app for this" - they write the complaint. You
+  will get better leads searching what THEY would type.
+
+COVERAGE: PARTIAL
+  searched github (100 posts)   searched hackernews (22 posts)
+  searched reddit (194 posts)   searched web (10 posts)
+  COULD NOT SEARCH stackexchange - too many requests from this IP
+
+  Some sources could not be searched. Treat a low count as
+  incomplete rather than as an answer.
 
 ==============================================================================
 VERDICT: MODERATE signal
-  4 of 210 posts matched (1.9%)
-  1.9% of posts matched. That is thin.
+  12 of 316 posts matched (3.8%)
+  match quality: 0.68 (4 recent enough to reply to)
+  3.8% of posts matched. Enough to be worth a conversation.
 
   What the other posts are about instead:
-      14  finding clients
-      11  raising rates
-       9  chasing invoices
+      25  social media       10  landing pages
+      13  love hear           9  online presence
+      10  graphic design      9  cash flow
 ==============================================================================
 
-1 PERSON YOU CAN REPLY TO
+3 ALREADY BUILDING THIS - your competition:
 
-[1] Client refuses to pay me and my dad for over 2 months of work
-    reddit r/legaladvice - 7d ago - by /u/Tiny_Ad3757
-    https://www.reddit.com/r/legaladvice/comments/1vvq96h/...
+  [1] Issue #11 - [feat] Employee Module - assign and manage restaurant staff
+      github Ashutosh-negi07/Plato - 10d ago
+  [2] [Beta] FastQRMenu - looking for restaurant owners to test updating a menu
+      reddit r/alphaandbetausers - 4d ago
+  [3] Launch HN: Boostly (YC S22) - SMS marketing for restaurants
+      hackernews - 48mo ago
+
+3 PERSON/PEOPLE you can reply to, best first:
+
+[1] Restaurant owners/managers - curious how you handle scheduling
+    reddit r/restaurant - 3h ago - by /u/Forsaken_Internet774
 
     --- draft reply (edit before sending) ---
-    You said: "Client refuses to pay me and my dad for over 2 months of work"
+    You said: "Restaurant owners/managers - curious how you handle scheduling
+    I work at a restaurant, and our manager has mentioned how much of a
+    headache it can be dealing with availability, schedule changes, and
+    call-outs."
 
     Curious about one thing, and I'm asking rather than selling: how long had
     this been going on before it got bad enough to post about? And did
     anything you tried actually help?
-
-2 PAGE(S) about this - evidence, not people
-  No drafts for these: a page has nobody to reply to.
 ```
 
-## You will type an idea. The people in pain will not.
+That is a real run, not a mock-up.
 
-Whoever reaches for this tool has an *idea* — that is why they came. But the
-people with the problem never use a builder's words. Nobody writes *"I need an
-app for this"*; they write the complaint.
+## What it does not claim
 
-So searching your idea verbatim finds **other builders**. Measured: the query
+**It does not know whether your idea is good.** It knows how many people in
+five searchable places are describing your problem right now, and it shows you
+the arithmetic. `MODERATE` means 3.8% of what it read was about your thing — it
+does not mean go, and `WEAK` does not mean stop.
+
+More importantly, it tells you what it **could not see**. If a source was
+rate-limited it says `COULD NOT SEARCH`, never `no results`, because those two
+look identical and mean opposite things. A tool that quietly reported silence
+from a search it never ran would talk someone out of a real idea, and that is
+the worst thing this could do.
+
+The coverage line is not a disclaimer. It is the most important line in the
+output.
+
+## Why it rewrites your query
+
+Searching an idea verbatim finds **other builders**, because they are the only
+people who use a builder's words. Measured: the query
 *"i wanna build a startup that helps students find internships"* returned two
 people asking what to build next — matched on the words "wanna" and "build" —
 and a feature request on somebody's intern-hackathon repo. Three leads, zero

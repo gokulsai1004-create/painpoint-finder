@@ -15,7 +15,15 @@ import verdict
 from sources import BLOCKED, ERROR, OK, Post, Result
 
 
-def post(title="", body="", author="a", url="u", age_days=1, contactable=True):
+_author_seq = [0]
+
+
+def post(title="", body="", author=None, url="u", age_days=1, contactable=True):
+    # Distinct authors by default. Sharing one author across fixtures made every
+    # post look like a cross-post once author-based dedup landed.
+    if author is None:
+        _author_seq[0] += 1
+        author = f"author{_author_seq[0]}"
     import time
     return Post(
         source="test", title=title, body=body, url=url, author=author,
@@ -194,10 +202,41 @@ class TestRanking(unittest.TestCase):
         return [Result("test", OK, posts=posts, searched=len(posts))]
 
     def test_crosspost_shown_once(self):
-        a = post(title="Client refuses to pay", body="freelancer here", url="u1")
-        b = post(title="Client refuses to pay", body="freelancer here", url="u2")
+        # One person, two subreddits. The author has to be spelled out here:
+        # fixtures get distinct authors by default, and a crosspost is defined
+        # by the author being the same.
+        a = post(title="Client refuses to pay", body="freelancer here",
+                 url="u1", author="same")
+        b = post(title="Client refuses to pay", body="freelancer here",
+                 url="u2", author="same")
         people, _, _ = leads.rank(self._results([a, b]), "client refuses pay")
         self.assertEqual(len(people), 1)
+
+    def test_reworded_crosspost_shown_once(self):
+        # The case that exposed the bug. One person posted the same question to
+        # two subreddits minutes apart with a reworded title, and both slots in
+        # the lead list went to him - the fastest way to look like a bot.
+        a = post(title="How much freedom does your school give students",
+                 body="I want to know how much freedom schools actually give.",
+                 url="u1", author="TomZillaforLife")
+        b = post(title="How much freedom does ur school / university give you?",
+                 body="I want to know how much freedom schools actually give.",
+                 url="u2", author="TomZillaforLife")
+        people, _, _ = leads.rank(self._results([a, b]), "school freedom students")
+        self.assertEqual(len(people), 1)
+
+    def test_same_author_different_topic_both_kept(self):
+        # The other half. Someone active in a niche posts about several distinct
+        # problems, and collapsing those would silently delete real leads.
+        a = post(title="Cement Plant Kiln shutdown every winter",
+                 body="Our cement plant kiln shuts down and nobody can say why.",
+                 url="u1", author="planthand")
+        b = post(title="Cement kiln maintenance problem with the feed screw",
+                 body="The feed screw on the cement kiln jams and maintenance "
+                      "takes the whole line down for a day.",
+                 url="u2", author="planthand")
+        people, _, _ = leads.rank(self._results([a, b]), "cement kiln problem")
+        self.assertEqual(len(people), 2)
 
     def test_pages_separated_from_people_and_get_no_draft(self):
         person = post(title="Client refuses to pay", body="me too", url="u1")

@@ -322,6 +322,75 @@ def is_thin(post):
     return len(post.title.strip()) < BARE_TITLE_CHARS
 
 
+# Two posts by the same person this close together are one cross-post, whatever
+# the titles say.
+CROSSPOST_WINDOW_SECONDS = 30 * 60
+
+# How much of a title must overlap, as a fraction of all the distinctive words
+# in both, before two posts by one author count as the same thing. Measured on
+# the real case: "How much freedom does your school give students" and "How much
+# freedom does ur school / university give you?" share 0.71, while "Cement Plant
+# Kiln shutdown" and "Cement kiln maintenance problem" share 0.20.
+TITLE_SAME_RATIO = 0.6
+
+# Within the cross-post window the bar drops, because posting twice in half an
+# hour is itself evidence. It does not drop to zero: a person can have two
+# genuinely different problems in one sitting, and collapsing those deletes a
+# real lead the user never finds out existed.
+TITLE_SAME_RATIO_NEARBY = 0.35
+
+
+def _already_seen(post, seen):
+    """Has this person already been surfaced?
+
+    Matching on (author, exact title) was not enough. A real run returned
+    "How much freedom does your school give students" and "How much freedom
+    does ur school / university give you?" as two separate leads - same author,
+    same question, reworded for a second subreddit. Messaging the same person
+    twice is the fastest way to look like a bot.
+
+    Titles are compared by their distinctive words rather than their exact text,
+    so a reword does not read as a new person, and the bar for "same thing"
+    drops when the two posts are minutes apart.
+
+    Deliberately not collapsing every same-author post inside the window: an
+    over-eager rule here deletes a real lead silently, while an under-eager one
+    shows a duplicate the user can see and skip.
+    """
+    author = post.author.strip().lower()
+    if not author:
+        # No author to be duplicated. Fall back to the URL so identical pages
+        # from two sources still collapse.
+        key = ("", post.url)
+        if key in seen:
+            return True
+        seen.add(key)
+        return False
+
+    for prior_author, prior_words, prior_time in list(seen):
+        if prior_author != author:
+            continue
+        nearby = abs(post.created_utc - prior_time) <= CROSSPOST_WINDOW_SECONDS
+        threshold = TITLE_SAME_RATIO_NEARBY if nearby else TITLE_SAME_RATIO
+        # Jaccard rather than raw overlap - counting shared words alone called
+        # "Cement Plant Kiln" and "Cement kiln maintenance problem" the same
+        # post, because two words matched out of five distinct ones.
+        words = _title_words(post.title)
+        if words and prior_words:
+            overlap = len(words & prior_words) / len(words | prior_words)
+            if overlap >= threshold:
+                return True
+
+    seen.add((author, _title_words(post.title), post.created_utc))
+    return False
+
+
+def _title_words(title):
+    """A title reduced to its distinctive words, as a frozen set."""
+    words = re.findall(r"[a-z']+", title.lower())
+    return frozenset(w for w in words if w not in STOPWORDS and len(w) > 2)
+
+
 def rank(results, query, limit=10, min_score=1, semantic_on=True):
     """All sources' posts, best leads first.
 
@@ -338,13 +407,13 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
         if not result.usable:
             continue
         for post in result.posts:
-            fingerprint = (post.author.lower(), post.title.strip().lower())
-            if fingerprint in seen:
-                continue
-
             points, hits = score(post, terms, pairs)
             if points >= min_score:
-                seen.add(fingerprint)
+                # Deduped only among posts that actually qualify. Checking
+                # earlier would let a person's junk post claim their slot and
+                # hide their good one.
+                if _already_seen(post, seen):
+                    continue
                 scored.append({
                     "post": post,
                     "score": points,

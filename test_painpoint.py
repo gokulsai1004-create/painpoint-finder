@@ -12,7 +12,10 @@ import unittest
 
 import leads
 import verdict
+from pathlib import Path
+
 from sources import BLOCKED, ERROR, OK, Post, Result
+from sources import web
 
 
 _author_seq = [0]
@@ -651,6 +654,105 @@ class TestSemantic(unittest.TestCase):
                                           semantic_on=False)
         self.assertEqual(len(people), 1)
         self.assertNotIn("reranked", people[0])
+
+
+
+class TestWebSource(unittest.TestCase):
+    """The fallback that exists so no query returns a false zero.
+
+    It broke silently. DuckDuckGo throttles by serving HTTP 202 - a SUCCESS
+    code - carrying a "bots use DuckDuckGo too" page, so the parser found no
+    results and reported ERROR "page layout changed?". Two things were wrong
+    with that: the message sent a reader looking for a bug that did not exist,
+    and only BLOCKED reaches the cache fallback, so a recent good answer sat
+    on disk unused.
+    """
+
+    class FakeResponse:
+        def __init__(self, status_code, text):
+            self.status_code = status_code
+            self.text = text
+
+    RESULT_PAGE = (
+        '<div class="result results_links_deep result--ad">'
+        '<a rel="nofollow" class="result__a" '
+        'href="https://duckduckgo.com/y.js?ad_domain=jobrapido.com&amp;'
+        'ad_provider=bingv7aa">Freelance Jobs - Apply Now</a>'
+        '<a class="result__snippet">Thousands of freelance jobs.</a></div>'
+        '<div class="result results_links_deep">'
+        '<a class="result__a" href="//duckduckgo.com/l/?uddg='
+        'https%3A%2F%2Fexample.com%2Funpaid">Client refuses to pay</a>'
+        '<a class="result__snippet">What to do when a client will not pay.</a>'
+        '</div>'
+    )
+
+    THROTTLE_PAGE = (
+        '<html><head><title>DuckDuckGo</title></head><body>'
+        '<form id="img-form" action="//duckduckgo.com/anomaly.js?sv=html'
+        '&cc=botnet&ti=1788146829"></form>'
+        '<div class="anomaly-modal__title">Unfortunately, bots use '
+        'DuckDuckGo too.</div></body></html>'
+    )
+
+    def test_a_202_throttle_page_is_blocked_not_an_error(self):
+        # The whole bug in one assertion. ERROR here means no cache fallback
+        # and a user hunting for a parser bug that is not there.
+        self.assertTrue(web._throttled(self.FakeResponse(202, self.THROTTLE_PAGE)))
+
+    def test_the_marker_is_checked_as_well_as_the_status(self):
+        # 202 is a success code. Trusting it alone would be guessing about an
+        # endpoint that has already changed its mind once.
+        self.assertTrue(web._throttled(self.FakeResponse(200, self.THROTTLE_PAGE)))
+
+    def test_a_real_results_page_is_not_throttled(self):
+        self.assertFalse(web._throttled(self.FakeResponse(200, self.RESULT_PAGE)))
+
+    def test_adverts_are_dropped(self):
+        # Adverts arrive through the same result__a class as organic hits. An
+        # advert is somebody selling INTO the pain, and its href is a click
+        # tracker, so the URL shown would not be where the user lands.
+        result = web._parse(self.RESULT_PAGE, limit=10)
+        self.assertEqual(result.status, OK)
+        self.assertEqual(len(result.posts), 1)
+        self.assertEqual(result.posts[0].url, "https://example.com/unpaid")
+        for post in result.posts:
+            self.assertNotIn("y.js", post.url)
+
+    def test_results_are_pages_not_people(self):
+        for post in web._parse(self.RESULT_PAGE, limit=10).posts:
+            self.assertFalse(post.contactable)
+
+    def test_a_genuine_layout_change_is_still_an_error(self):
+        # Now that refusals are caught earlier, this branch means what it says.
+        result = web._parse("<html><body>nothing familiar</body></html>", limit=10)
+        self.assertEqual(result.status, ERROR)
+
+    def test_cooldown_blocks_without_spending_a_request(self):
+        # Each attempt costs quota whether it succeeds or not, so hammering a
+        # throttled endpoint makes the NEXT search fail too.
+        import tempfile
+        original = web.COOLDOWN_FILE
+        try:
+            web.COOLDOWN_FILE = Path(tempfile.gettempdir()) / "pf-test-cooldown"
+            web.COOLDOWN_FILE.unlink(missing_ok=True)
+            self.assertEqual(web._cooling_down(), 0)
+            web._start_cooldown()
+            self.assertGreater(web._cooling_down(), 0)
+
+            def explode(*a, **k):
+                raise AssertionError("made a request while cooling down")
+
+            saved = web.requests.post
+            web.requests.post = explode
+            try:
+                result = web.search("anything", 10)
+            finally:
+                web.requests.post = saved
+            self.assertEqual(result.status, BLOCKED)
+            self.assertIn("cooldown", result.detail)
+        finally:
+            web.COOLDOWN_FILE.unlink(missing_ok=True)
+            web.COOLDOWN_FILE = original
 
 
 if __name__ == "__main__":

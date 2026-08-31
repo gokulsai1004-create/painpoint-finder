@@ -109,8 +109,21 @@ PROMO_MARKERS = re.compile(
 STRONG_BUILDER = re.compile(
     r"(\[\s*(beta|launch|showoff|dev\s*log)\s*\]"
     r"|\b(show hn|launch hn|roast my)\b"
-    r"|\bmy (side project|startup|saas|mvp)\b"
+    # "my startup" alone is not promotion. It is how founders ask for help -
+    # "How can I grow my startup, it is in prototype stage" is a person with a
+    # problem, and a quoted comment inside an AMA tripped it too. Both were
+    # being filed as competitors and losing their draft. A promotional verb in
+    # front is what actually separates showing it off from asking about it.
+    r"|\b(check ?out|introducing|launching|sharing|meet|try)\s+my\s+"
+    r"(side project|startup|saas|mvp|app|tool|product)\b"
     r"|\blooking for\s+(\w+\s+){0,3}(beta )?(testers?|early (users|adopters))\b"
+    # Recruiting testers in a full sentence. The bounded non-greedy gap matters:
+    # "I am looking for a few small-business owners or managers to test one
+    # thing" has six words between, which the fixed-width version above could
+    # not reach, so that post sat in the leads list. Checked against 325 real
+    # cached posts: it flags exactly two, and both are people recruiting for
+    # something they built.
+    r"|\blooking for\b[^.!?\n]{0,80}?\bto\s+(test|try)\b"
     r"|\blooking for\s+(\w+\s+){0,4}\bto\s+(beta[- ]?test|try (it|my|our))\b"
     r"|\bbeta (testers?|access|list)\b|\bjoin the waitlist\b)",
     re.IGNORECASE,
@@ -130,7 +143,7 @@ STRONG_BUILDER = re.compile(
 # the noun keeps the product in the object slot, which is what actually
 # distinguishes them.
 WEAK_BUILDER = re.compile(
-    r"\b(?:i'?m|i am|we'?re|we are|i'?ve|we'?ve|i|we)\s+"
+    r"\b(?:i'?m|i am|we'?re|we are|i'?ve|we'?ve|i|we)\s+(?:been\s+)?"
     r"(?:testing|building|launching|working on|built|made|shipped|released)\s+"
     r"(?:an|a|my|our)\s+"
     r"(?:[\w-]+\s+){0,2}"
@@ -140,7 +153,17 @@ WEAK_BUILDER = re.compile(
     # The -er family, spelled out rather than matched by suffix: "manager",
     # "owner" and "worker" all end the same way and only one is a product.
     r"scheduler|tracker|planner|generator|calculator|organiser|organizer|"
-    r"crm|marketplace|directory)\b",
+    r"crm|marketplace|directory)\b"
+    # An unnamed product aimed at an audience. "UAE F&B owners, I've been
+    # building something for you" is a real post that landed in the leads list:
+    # the product is never named, so the object slot above is empty and the rule
+    # cannot see it. The tell is that the thing is being built FOR someone.
+    # Requiring that keeps ordinary speech out - "I'm working on something else
+    # at the moment" does not qualify, and that is a person, not a competitor.
+    r"|\b(?:i'?ve|we'?ve|i'?m|we'?re|i|we)\s+(?:been\s+)?"
+    r"(?:building|built|making|made|working\s+on|launching|developing)\s+"
+    r"(?:something|a\s+thing)\s+"
+    r"(?:for|to\s+help|to\s+solve|to\s+fix|that\s+helps?)\b",
     re.IGNORECASE,
 )
 

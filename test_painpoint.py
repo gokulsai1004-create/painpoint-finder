@@ -1151,6 +1151,56 @@ class TestCodeReviewRegressions(unittest.TestCase):
         ):
             self.assertTrue(leads.is_builder(post(title=title, body=body)), title)
 
+    def test_unnamed_product_aimed_at_an_audience_is_a_builder(self):
+        # Found by re-running the live query after tightening the filter, not
+        # by the suite: "UAE F&B owners, I've been building something for you"
+        # sat in the leads list. The product is never named, so the direct
+        # object rule cannot see it - the tell is that it is built FOR someone.
+        for title in ("UAE F&B owners, I've been building something for you",
+                      "I've been working on something for restaurant owners",
+                      "I'm building something to fix this"):
+            self.assertTrue(leads.is_builder(post(title=title)), title)
+
+    def test_been_building_a_product_is_a_builder(self):
+        # "I've been building a tool" - the progressive form skipped the verb
+        # list entirely, because "been" sat between the pronoun and the verb.
+        self.assertTrue(leads.is_builder(post(title="I've been building a tool for rotas")))
+
+    def test_ordinary_speech_about_something_is_not_a_builder(self):
+        # The reason "something" needs the audience phrase: without it this is
+        # just how people talk, and every one of these is a person.
+        for body in ("I'm working on something else at the moment and cannot help",
+                     "I've been building my confidence back after the burnout",
+                     "I am working on nights for the first time and I am terrified."):
+            self.assertFalse(leads.is_builder(post(title="x", body=body)), body)
+
+    def test_recruiting_testers_in_a_sentence_is_a_builder(self):
+        # The fixed-width gap could not reach across six words, so "I am
+        # looking for a few small-business owners or managers to test one
+        # thing" sat in the leads list beside real restaurant owners.
+        for text in ("I am looking for a few small-business owners or managers "
+                     "to test one thing: is the signup clear?",
+                     "Looking for 5 people to test whether free signup feels clear"):
+            self.assertTrue(leads.is_builder(post(title="x", body=text)), text)
+
+    def test_saying_my_startup_is_not_promotion(self):
+        # Both of these were filed as competitors and lost their draft. The
+        # first is a founder asking for help - a person with a problem, which
+        # is the entire point of this tool. The second was a quoted comment
+        # inside an AMA that merely contained the phrase.
+        for title, body in (
+            ("How can I grow my startup, it's in prototype stage v0.1",
+             "I am building it alone and have no idea how to find users."),
+            ("I Am Sam Altman, President of Y Combinator. AMA",
+             "the code I've written for my startup looks as good as it needs to"),
+        ):
+            self.assertFalse(leads.is_builder(post(title=title, body=body)), title)
+
+    def test_promotional_framing_still_counts(self):
+        for text in ("check out my startup", "introducing my saas",
+                     "sharing my side project"):
+            self.assertTrue(leads.is_builder(post(title="x", body=text)), text)
+
     def test_a_null_author_does_not_take_down_the_search(self):
         # GitHub and Stack Exchange return the author key present-and-null for
         # ghost/deleted accounts, and .get(key, "") only supplies the default

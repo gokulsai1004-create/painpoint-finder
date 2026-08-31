@@ -196,6 +196,71 @@ class TestQuoting(unittest.TestCase):
             self.assertNotIn(word, draft)
 
 
+
+class TestIdeaShapedQueries(unittest.TestCase):
+    """The query someone actually types.
+
+    Whoever reaches for this tool has an IDEA - that is why they came. But the
+    people with the pain never use a builder's words, so searching the idea
+    verbatim finds other builders. A real run for "i wanna build a startup that
+    helps students find internships" returned two people asking what to build
+    next, matched on "wanna, build", plus a feature request on somebody's
+    intern-hackathon repo. Three leads, zero sufferers, verdict WEAK.
+    """
+
+    def test_builder_framing_is_recognised(self):
+        for q in ("i wanna build a startup that helps students find internships",
+                  "I want to build an app for freelancers to track invoices",
+                  "thinking about making a tool for nurses doing handover notes",
+                  "an app for freelancers to track unpaid invoices",
+                  "building a platform for cement plant maintenance teams"):
+            self.assertTrue(leads.looks_like_an_idea(q), q)
+
+    def test_a_real_complaint_is_left_alone(self):
+        # The costly false positive. Rewriting a good query would search
+        # something the user never asked for and never told them.
+        for q in ("students cant get internships without experience",
+                  "client refuses to pay for revisions",
+                  "nurses are burning out from understaffed night shifts",
+                  "my cement kiln shuts down every winter and nobody knows why"):
+            self.assertFalse(leads.looks_like_an_idea(q), q)
+            self.assertEqual(leads.problem_in(q), q)
+
+    def test_the_problem_survives_the_strip(self):
+        got = leads.problem_in(
+            "i wanna build a startup that helps students find internships")
+        for word in ("students", "internships"):
+            self.assertIn(word, got)
+        for word in ("wanna", "build", "startup"):
+            self.assertNotIn(word, got)
+
+    def test_solution_words_cannot_admit_a_post(self):
+        # The exact failure: two leads scored on "wanna, build" alone. Someone
+        # saying "startup" is not someone in pain.
+        terms = leads.keywords(
+            "i wanna build a startup that helps students find internships")
+        self.assertNotIn("build", leads.essential(terms))
+        self.assertNotIn("startup", leads.essential(terms))
+        self.assertIn("internships", leads.essential(terms))
+
+    def test_another_builder_no_longer_outranks_a_sufferer(self):
+        terms = ["build", "startup", "students", "internships"]
+        builder = post(title="Looking for my first project",
+                       body="I wanna build a startup but dont know what. Any "
+                            "ideas for what to build next?")
+        sufferer = post(title="Cant land an internship anywhere",
+                        body="Every internship wants students to already have "
+                             "experience, so I cannot get the experience.")
+        self.assertLess(leads.score(builder, terms)[0],
+                        leads.score(sufferer, terms)[0])
+
+    def test_a_query_of_pure_framing_still_searches(self):
+        # Degrade, never break. "i wanna build an app" has no problem inside it,
+        # so it is searched as written rather than as an empty string.
+        q = "i wanna build an app"
+        self.assertEqual(leads.problem_in(q), q)
+        self.assertTrue(leads.essential(leads.keywords(q)))
+
 class TestRanking(unittest.TestCase):
 
     def _results(self, posts):

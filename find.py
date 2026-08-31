@@ -26,7 +26,7 @@ import sources.hackernews  # noqa: F401
 import sources.reddit  # noqa: F401
 import sources.stackexchange  # noqa: F401
 import sources.web  # noqa: F401
-from leads import has_negation, rank
+from leads import has_negation, looks_like_an_idea, problem_in, rank
 from verdict import explain, summarise
 
 
@@ -75,9 +75,25 @@ def main():
                     help="skip meaning-based reranking (faster, less accurate)")
     args = ap.parse_args()
 
-    print(f'\nSearching for: "{args.query}"\n')
+    # An idea is not a problem. Someone arriving here has an idea - that is
+    # why they came - but the people with the pain never use the builder's
+    # words, so searching the idea verbatim finds other builders. Search the
+    # problem inside it instead, and say plainly that that is what happened:
+    # a tool that quietly searched the wrong thing and reported WEAK would
+    # talk someone out of a real idea, which is the worst thing it could do.
+    query = args.query
+    if looks_like_an_idea(query):
+        query = problem_in(query)
+        print('\nThat reads like an idea, not a problem.')
+        print(f'  you asked : "{args.query}"')
+        print(f'  I searched: "{query}"\n')
+        print('  People in pain do not use your words. They never write')
+        print('  "I need an app for this" - they write the complaint. You')
+        print('  will get better leads searching what THEY would type.\n')
+    else:
+        print(f'\nSearching for: "{query}"\n')
 
-    results = sources.run_all(args.query, limit=args.limit)
+    results = sources.run_all(query, limit=args.limit)
     level, ok, blocked, errored = coverage(results)
 
     # Coverage first, always. It frames everything below it.
@@ -113,7 +129,7 @@ def main():
         print("\n  Some sources could not be searched. Treat a low count as")
         print("  incomplete rather than as an answer.")
 
-    leads, pages, terms = rank(results, args.query, limit=args.n,
+    leads, pages, terms = rank(results, query, limit=args.n,
                                semantic_on=not args.no_semantic)
     print(f"\nMatched on: {', '.join(terms) or '(no usable keywords)'}")
 
@@ -128,7 +144,7 @@ def main():
             print("Ranked by keywords only - install fastembed for better "
                   "results: pip install fastembed")
 
-    if has_negation(args.query):
+    if has_negation(query):
         print("\n  WARNING: your query contains a negation (\"not\", \"without\",")
         print("  \"can't\"). This version matches keywords, which cannot tell")
         print("  \"not getting paid\" from \"getting paid\" - opposite problems,")

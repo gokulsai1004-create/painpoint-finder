@@ -101,6 +101,81 @@ COMMON = {
 }
 
 
+# Words that describe the thing you would BUILD, not the thing that hurts.
+#
+# Someone in pain writes "I can't get an internship without experience". Nobody
+# in pain writes "I need an app for this". So when a search is gated on these
+# words it goes looking for other builders instead of sufferers: a live run for
+# "i wanna build a startup that helps students find internships" returned two
+# people asking what to build next - matched on "wanna, build" - and a feature
+# request on somebody's intern-hackathon repo. Three leads, zero sufferers, and
+# a WEAK verdict that would have talked someone out of a real idea.
+#
+# These are not stopwords: they are meaningful, and a query made only of them
+# still has to work. They just must never be the word that admits a post.
+SOLUTION_WORDS = {
+    "app", "apps", "application", "startup", "startups", "start-up",
+    "build", "building", "built", "builds", "tool", "tools", "platform",
+    "saas", "software", "product", "website", "site", "service", "system",
+    "solution", "idea", "ideas", "wanna", "want", "wants", "wanted",
+    "create", "creating", "launch", "launching", "make", "making", "mvp",
+    "dashboard", "marketplace", "automate", "automation", "startup's",
+    "company", "business", "venture", "helps", "helping",
+}
+
+
+def _weight(term, rare, common):
+    """What a matched term is worth. Solution words score like common ones:
+    a post saying "startup" tells you nothing about whether it hurts."""
+    if term in COMMON or term in SOLUTION_WORDS:
+        return common
+    return rare
+
+
+# Query shapes that describe a build rather than a pain. Detected so the tool
+# can search the problem hiding inside, and say that it did - searching the
+# wrong thing and quietly reporting WEAK is the same failure as a blocked
+# source reading as "nobody has this problem".
+IDEA_FRAMING = re.compile(
+    # "i wanna build a startup that ...", "thinking about making an app for ..."
+    r"^\s*(i\s+)?(wanna|want\s+to|plan\s+to|hope\s+to|going\s+to|"
+    r"thinking\s+(of|about)|trying\s+to|working\s+on|looking\s+to)?\s*"
+    r"(build|building|make|making|create|creating|launch|launching|"
+    r"start|starting|develop|developing)\s+"
+    r"(a|an|the|my)?\s*"
+    r"(startup|start-up|app|application|tool|platform|saas|product|business|"
+    r"company|website|site|service|system|mvp)?\s*"
+    r"(around|about|for|that|which|to|helps?|helping)?\s*"
+    # or a bare "an app for ...", "a tool that ..."
+    r"|^\s*(a|an)\s+"
+    r"(app|application|tool|platform|saas|product|website|service|system)\s+"
+    r"(for|that|to|which|helps?)\s*",
+    re.IGNORECASE,
+)
+
+
+def looks_like_an_idea(query):
+    """Is this describing what you would build rather than what hurts?"""
+    return bool(IDEA_FRAMING.match(query) and problem_in(query) != query)
+
+
+def problem_in(query):
+    """The problem hiding inside an idea-shaped query.
+
+    Strips the builder's preamble only. It cannot invert a feature back into a
+    complaint - "helps students find internships" is still the fix, not the
+    hurt - so this narrows the search without pretending to have understood it.
+    Saying so is find.py's job.
+    """
+    stripped = IDEA_FRAMING.sub(" ", query, count=1).strip()
+    # Refuse to return something with nothing left to search on. A query that
+    # is entirely framing is better handled as-is than as an empty string.
+    if not stripped or not [w for w in keywords(stripped)
+                            if w not in SOLUTION_WORDS]:
+        return query
+    return stripped
+
+
 # Words that flip a query's meaning. Keyword matching cannot represent them:
 # "not getting paid" and "getting paid" reduce to the same terms, which are
 # opposite problems. Detected so the tool can say so rather than quietly
@@ -137,8 +212,11 @@ def essential(terms):
     a lead, however many common words it hits. The distinctive words are the
     subject; the rest are grammar.
     """
-    distinctive = [t for t in terms if t not in COMMON]
-    return distinctive or terms  # never leave a query with nothing required
+    distinctive = [t for t in terms
+                   if t not in COMMON and t not in SOLUTION_WORDS]
+    # Two fallbacks, never an empty gate. A query of nothing but solution words
+    # ("i wanna build an app") still has to search something.
+    return distinctive or [t for t in terms if t not in COMMON] or terms
 
 
 def score(post, terms, pairs=()):
@@ -161,7 +239,7 @@ def score(post, terms, pairs=()):
 
     # Rare words are worth far more than common ones. Matching "freelancers"
     # says what the post is about; matching "work" says almost nothing.
-    points = sum(20 if t not in COMMON else 3 for t in hits)
+    points = sum(_weight(t, 20, 3) for t in hits)
 
     # A phrase match is worth more than both its words separately, because word
     # order is most of what separates "getting paid" from a post that happens to
@@ -172,7 +250,7 @@ def score(post, terms, pairs=()):
     # A title match means the problem is what the post is ABOUT, not a passing
     # mention buried in paragraph nine.
     title = post.title.lower()
-    points += sum(15 if t not in COMMON else 2 for t in terms if t in title)
+    points += sum(_weight(t, 15, 2) for t in terms if t in title)
 
     if FIRST_PERSON.search(post.text()):
         points += 25

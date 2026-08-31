@@ -1020,5 +1020,69 @@ class TestCommandLine(unittest.TestCase):
         self.assertNotIn("Nobody in the searched sources", text)
 
 
+
+class TestStackExchangeThrottle(unittest.TestCase):
+    """Stack Exchange throttles in two shapes, and only one used to be read
+    correctly.
+
+    Soft: HTTP 200 with a JSON error_id of throttle_violation.
+    Hard: HTTP 429 carrying an HTML "Too Many Requests" page.
+
+    The HTML never parses as JSON, and the parse was attempted before the
+    status was checked, so a hard throttle came back as ERROR "could not parse
+    response" - which reads like a broken parser and never reaches the cache
+    fallback in sources.run(). Exactly the bug the web source had with
+    DuckDuckGo's HTTP 202.
+    """
+
+    class FakeResponse:
+        def __init__(self, status_code, text, payload=None):
+            self.status_code = status_code
+            self.text = text
+            self._payload = payload
+
+        def json(self):
+            if self._payload is None:
+                raise ValueError("not json")
+            return self._payload
+
+    def _search(self, resp):
+        import sources.stackexchange as se
+        saved = se.requests.get
+        se.requests.get = lambda *a, **k: resp
+        try:
+            return se._search_site("workplace", "q", 10, time.monotonic() + 30)
+        finally:
+            se.requests.get = saved
+
+    def test_hard_throttle_is_blocked_not_an_error(self):
+        html = ("<!DOCTYPE html><html><head><title>Too Many Requests - "
+                "Stack Exchange</title></head><body>slow down</body></html>")
+        _, status, detail = self._search(self.FakeResponse(429, html))
+        self.assertEqual(status, BLOCKED)
+        self.assertIn("rate-limited", detail)
+
+    def test_soft_throttle_is_still_blocked(self):
+        payload = {"error_id": 502, "error_name": "throttle_violation",
+                   "error_message": "too many requests from this IP"}
+        _, status, detail = self._search(self.FakeResponse(200, "{}", payload))
+        self.assertEqual(status, BLOCKED)
+
+    def test_genuinely_unparseable_body_is_still_an_error(self):
+        # The branch must not be swallowed: a 200 that is not JSON means the
+        # endpoint changed shape, and that wants a human, not a cooldown.
+        _, status, detail = self._search(self.FakeResponse(200, "<html>?</html>"))
+        self.assertEqual(status, ERROR)
+
+    def test_a_normal_response_still_returns_posts(self):
+        payload = {"items": [{"title": "Rota trouble", "body": "<p>help</p>",
+                              "link": "https://x/1", "creation_date": 1,
+                              "answer_count": 2, "owner": {"display_name": "sam"}}]}
+        posts, status, _ = self._search(self.FakeResponse(200, "{}", payload))
+        self.assertEqual(status, OK)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0].author, "sam")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

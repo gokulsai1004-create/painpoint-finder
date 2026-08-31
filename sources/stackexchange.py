@@ -89,6 +89,16 @@ def _search_site(site, search_text, limit, deadline):
     except requests.RequestException as exc:
         return [], ERROR, f"{site}: network: {exc}"
 
+    # Status code BEFORE parsing. Stack Exchange throttles in two different
+    # shapes: a soft one that returns HTTP 200 with a JSON error_id, and a hard
+    # one that returns HTTP 429 carrying an HTML "Too Many Requests" page. The
+    # HTML never parses as JSON, so checking the body first reported the hard
+    # throttle as "could not parse response" - an ERROR, which reads like a
+    # broken parser and, worse, never reaches the cache fallback in
+    # sources.run(). Same bug the web source had with DuckDuckGo's HTTP 202.
+    if resp.status_code == 429:
+        return [], BLOCKED, f"{site}: rate-limited (HTTP 429)"
+
     try:
         payload = resp.json()
     except ValueError:
@@ -103,8 +113,6 @@ def _search_site(site, search_text, limit, deadline):
             return [], BLOCKED, f"{site}: {message}"
         return [], ERROR, f"{site}: {message}"
 
-    if resp.status_code == 429:
-        return [], BLOCKED, f"{site}: rate-limited"
     if resp.status_code >= 400:
         return [], ERROR, f"{site}: HTTP {resp.status_code}"
 

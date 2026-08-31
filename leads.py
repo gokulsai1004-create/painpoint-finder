@@ -94,21 +94,52 @@ PROMO_MARKERS = re.compile(
 # repo first, and a query about restaurant rotas ranked "[Beta] FastQRMenu -
 # looking for restaurant owners to test" second. Neither person has the
 # problem. Both have your idea.
-BUILDER_MARKERS = re.compile(
-    # Bracketed launch tags, the convention on r/alphaandbetausers and similar.
-    r"(\[\s*(beta|launch|show|showoff|feedback|oc\s*:\s*tool)\s*\]"
-    r"|\b(show hn|launch hn|roast my|my (side project|startup|saas))\b"
-    # Recruiting testers. "[Beta] FastQRMenu - looking for restaurant owners to
-    # test updating a menu from their phone" matched none of the old markers.
-    r"|\blooking for\s+(\w+\s+){0,3}(testers?|beta|early (users|adopters))\b"
-    r"|\blooking for\s+(\w+\s+){0,3}\bto\s+(test|try|beta)\b"
-    r"|\b(beta|early) (access|testers?|users)\b|\bwaitlist\b"
-    # First-person building, as opposed to first-person suffering.
-    r"|\bi'?m\s+(testing|building|working on|launching)\b"
-    r"|\bwe'?(re|ve)\s+(built|building|launching|made)\b"
-    r"|\b(just )?(launched|shipped|released)\s+(a|an|my|our)\b"
-    r"|\bfeedback\s+(welcome|appreciated|wanted)\b"
-    r"|\btry it (out|free|here)\b)",
+#
+# The bar is HIGH on purpose, and higher than it was. This started out reusing
+# PROMO_MARKERS, which is a soft scoring penalty where a false positive costs a
+# few points - as a hard classifier, where a false positive deletes a lead the
+# user never learns existed. A nursing query then filed three innocent posts
+# under "your competition", including one whose only sin was the phrase "I'm
+# testing" in a medical sense. Missing a competitor costs the user a link they
+# can find themselves; hiding a customer costs them the conversation they came
+# for.
+
+# Unambiguous. Nobody writes these about anything but a product they are
+# shipping.
+STRONG_BUILDER = re.compile(
+    r"(\[\s*(beta|launch|showoff|dev\s*log)\s*\]"
+    r"|\b(show hn|launch hn|roast my)\b"
+    r"|\bmy (side project|startup|saas|mvp)\b"
+    r"|\blooking for\s+(\w+\s+){0,3}(beta )?(testers?|early (users|adopters))\b"
+    r"|\blooking for\s+(\w+\s+){0,4}\bto\s+(beta[- ]?test|try (it|my|our))\b"
+    r"|\bbeta (testers?|access|list)\b|\bjoin the waitlist\b)",
+    re.IGNORECASE,
+)
+
+# Words for the thing being built. Required near any weaker phrase below,
+# because "I'm testing", "we've made" and "just launched" all have entirely
+# innocent lives outside a product launch.
+PRODUCT_NOUN = re.compile(
+    r"\b(app|apps|tool|tools|platform|saas|product|startup|site|website|"
+    r"service|dashboard|extension|plugin|bot|mvp|software|prototype|"
+    r"landing page|waitlist|beta|demo|"
+    # The -er family, spelled out rather than matched by suffix: "manager" and
+    # "owner" and "worker" all end the same way, and only one of them is a
+    # product. "I built a browser-based staff scheduler" was being missed.
+    r"scheduler|tracker|planner|generator|calculator|organiser|organizer|"
+    r"crm|pos system|integration|marketplace|directory)\b",
+    re.IGNORECASE,
+)
+
+# Building language that is only builder language when a product is named in
+# the same breath. The 60-character window keeps them inside one clause: "I
+# built a staff scheduler" qualifies, "we made a complaint to management" does
+# not, and neither does "I am testing my hormone levels every month" - which is
+# a real post this filter previously handed back as somebody's competitor.
+WEAK_BUILDER = re.compile(
+    r"\b(i'?m|i am|we'?re|we are|i'?ve|we'?ve|i|we)\s+"
+    r"(testing|building|launching|working on|built|made|shipped|released)\b"
+    r"[^.!?\n]{0,60}",
     re.IGNORECASE,
 )
 
@@ -135,11 +166,18 @@ FEATURE_REQUEST = re.compile(
 def is_builder(post):
     """Is this someone building the solution rather than living the problem?"""
     text = post.text()
-    if BUILDER_MARKERS.search(text) or PROMO_MARKERS.search(text):
+
+    if STRONG_BUILDER.search(text):
         return True
+
+    for match in WEAK_BUILDER.finditer(text):
+        if PRODUCT_NOUN.search(match.group(0)):
+            return True
+
     # Source-specific, because the same words mean different things elsewhere:
     # "[feat]" in a Reddit title is rare and probably not a roadmap item.
-    return bool(post.source.startswith("github") and FEATURE_REQUEST.search(post.title))
+    return bool(post.source.startswith("github")
+                and FEATURE_REQUEST.search(post.title))
 
 
 def keywords(query):

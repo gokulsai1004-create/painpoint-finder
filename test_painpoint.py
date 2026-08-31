@@ -844,6 +844,39 @@ class TestBuilders(unittest.TestCase):
         self.assertNotIn(summary["signal"], ("STRONG", "MODERATE"))
 
 
+    def test_innocent_posts_are_not_filed_as_competitors(self):
+        # The dangerous direction. This filter began by reusing PROMO_MARKERS -
+        # a soft scoring penalty, where a false positive costs a few points -
+        # as a hard classifier, where a false positive deletes a lead the user
+        # never learns existed. A nursing query then filed three innocent posts
+        # under "your competition", one of them for the phrase "I'm testing"
+        # used about hormone levels.
+        innocent = [
+            ("General MTF 50+ Transition Questions",
+             "I am testing my hormone levels every month and my doctor said "
+             "to wait before changing anything."),
+            ("First night shift tomorrow",
+             "I am working on nights for the first time and I am terrified."),
+            ("Nurses we are understaffed every night",
+             "I work nights and we made a complaint to management about it."),
+            ("Client refuses to pay",
+             "Three months of invoices ignored, we have made no progress."),
+        ]
+        for title, body in innocent:
+            self.assertFalse(leads.is_builder(post(title=title, body=body)), title)
+
+    def test_building_language_still_counts_when_a_product_is_named(self):
+        # The other side of the same threshold: tightening must not blind it.
+        real = [
+            ("How are you handling cross-promos?",
+             "I got tired of Linktree so I built a small tool for it."),
+            ("I built a browser-based staff scheduler for small restaurants",
+             "Where would you look for users?"),
+            ("Show HN: I built a rota tool", ""),
+        ]
+        for title, body in real:
+            self.assertTrue(leads.is_builder(post(title=title, body=body)), title)
+
     def test_github_issue_number_prefix_does_not_hide_a_feature_request(self):
         # GitHub titles arrive prefixed with their issue number, so an anchored
         # pattern caught only the ones whose number happened to be missing.

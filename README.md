@@ -47,6 +47,70 @@ VERDICT: MODERATE signal
   No drafts for these: a page has nobody to reply to.
 ```
 
+## You will type an idea. The people in pain will not.
+
+Whoever reaches for this tool has an *idea* — that is why they came. But the
+people with the problem never use a builder's words. Nobody writes *"I need an
+app for this"*; they write the complaint.
+
+So searching your idea verbatim finds **other builders**. Measured: the query
+*"i wanna build a startup that helps students find internships"* returned two
+people asking what to build next — matched on the words "wanna" and "build" —
+and a feature request on somebody's intern-hackathon repo. Three leads, zero
+sufferers, and a `WEAK` verdict that would have talked someone out of a real
+idea.
+
+The tool now searches the problem inside the idea, and says so:
+
+```
+That reads like an idea, not a problem.
+  you asked : "i wanna build a tool that helps small restaurant owners manage their staff rotas"
+  I searched: "helps small restaurant owners manage their staff rotas"
+
+  People in pain do not use your words. They never write
+  "I need an app for this" - they write the complaint. You
+  will get better leads searching what THEY would type.
+```
+
+It deliberately does **not** claim to have understood you. Stripping "i wanna
+build a tool that" is honest string work; turning a feature back into a
+complaint is not, so it tells you to do that part yourself.
+
+## Who is already building it
+
+The same search that finds your customers finds your competitors, because they
+post about the same problem in the same places. Handing you those under the
+heading *"people you can reply to"* wastes the slot — and offering to draft one
+a sympathetic *"how long has this been going on?"* is an embarrassing thing to
+send someone who is selling the cure.
+
+They get their own section, printed **before** the leads, because a reader who
+has started drafting replies has stopped deciding:
+
+```
+4 ALREADY BUILDING THIS - your competition:
+
+  [1] Issue #11 - [feat] Employee Module - assign and manage restaurant staff
+      github Ashutosh-negi07/Plato - 10d ago
+  [2] [Beta] FastQRMenu - looking for restaurant owners to test updating a menu
+      reddit r/alphaandbetausers - 4d ago
+  [3] If you already know restaurant owners, I'm testing a 30% recurring affiliate
+      reddit r/passive_income - 4d ago
+  [4] Launch HN: Boostly (YC S22) - SMS marketing for restaurants
+      hackernews - 48mo ago
+
+  Not leads, and not nothing. Read what they built and what people say back
+  to them - that is the fastest free research you will get. If several exist
+  and none has taken the market, the interesting question is why.
+```
+
+If *every* match is a builder, the verdict says so in those words — **"no
+customers found, only rivals"** — rather than the misleading "nothing recent
+enough to reply to". The space is not quiet. It is taken.
+
+Detection is deliberately narrow: a plain bug report stays a lead, because
+someone whose tool is broken is genuinely in pain.
+
 ## Why it exists
 
 I had a startup idea, built a prototype in an afternoon, then spent four days
@@ -89,7 +153,7 @@ a minute. Every run after that is offline. Skip it entirely with
 | Reddit | People describing problems, via public RSS | no |
 | Hacker News | Stories **and comments** — comments are where complaints live | no |
 | Stack Exchange | 8 sites at once: The Workplace, Engineering, Law, Medical Sciences, Academia, Project Management, Money, Stack Overflow | no |
-| GitHub issues | Someone saying what a tool they *already use* cannot do | no |
+| GitHub issues | Someone saying what a tool they *already use* cannot do — and, sorted out separately, the people building your idea | no |
 | Web (DuckDuckGo) | Fallback so no query ever returns a false zero | no |
 
 GitHub issues are worth calling out. A forum complaint is someone annoyed; a
@@ -144,7 +208,7 @@ client refuses to pay for revisions"*:
 No key, no account, no network after the first run. Skipped automatically if
 `fastembed` is not installed, or explicitly with `--no-semantic`.
 
-## The three ideas it is built on
+## The ideas it is built on
 
 **A blocked search is not an empty search.** If Reddit rate-limits us, the tool
 says `COULD NOT SEARCH`, never `no results`. Those two things look identical
@@ -155,6 +219,12 @@ in a comment.
 **The ratio is the answer, not the count.** Seven matches sounds promising
 until you learn it was seven out of nine hundred and sixty-three. The verdict
 prints before the leads for that reason.
+
+**A competitor is not a customer.** Someone launching the thing you were
+going to launch posts about the same problem in the same places. They are
+separated out and never drafted a reply, because the finding *"three people
+already shipped this"* changes your next move more than one more complaint
+would.
 
 **A page is not a person.** A Reddit thread has an author who can answer you; a
 blog post does not. Results are split, and pages explicitly get no draft

@@ -1201,6 +1201,33 @@ class TestCodeReviewRegressions(unittest.TestCase):
                      "sharing my side project"):
             self.assertTrue(leads.is_builder(post(title="x", body=text)), text)
 
+    def test_the_flagging_evidence_is_returned_and_readable(self):
+        # No regex closes the set of ways English says "I built a thing", so
+        # this classifier will always be wrong sometimes. The honest response
+        # is to print the evidence: a reader who sees flagged by "I got tired
+        # of" can tell in a second that the call was wrong and treat the post
+        # as a lead. A judgement you cannot inspect is one you cannot overrule.
+        for title, body, expected in (
+            ("Show HN: I built a rota tool", "", "Show HN"),
+            ("[Beta] FastQRMenu", "looking for restaurant owners to test", "[Beta]"),
+        ):
+            got = leads.builder_reason(post(title=title, body=body))
+            self.assertIsNotNone(got, title)
+            self.assertIn(expected.lower(), got.lower())
+
+    def test_a_lead_has_no_flagging_evidence(self):
+        self.assertIsNone(leads.builder_reason(
+            post(title="Client refuses to pay",
+                 body="Three months of invoices ignored and I am stuck.")))
+
+    def test_rank_attaches_the_reason_to_each_builder(self):
+        rival = post(title="Show HN: I built a rota tool for restaurants",
+                     body="I built a scheduling tool for restaurant staff rotas.")
+        _, builders, _, _ = leads.rank(
+            [Result("test", OK, posts=[rival], searched=1)],
+            "restaurant staff rotas", semantic_on=False)
+        self.assertTrue(builders[0]["builder_reason"])
+
     def test_a_null_author_does_not_take_down_the_search(self):
         # GitHub and Stack Exchange return the author key present-and-null for
         # ghost/deleted accounts, and .get(key, "") only supplies the default

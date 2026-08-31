@@ -187,20 +187,41 @@ FEATURE_REQUEST = re.compile(
 )
 
 
-def is_builder(post):
-    """Is this someone building the solution rather than living the problem?"""
+def builder_reason(post):
+    """The exact words that make this look like someone building, or None.
+
+    Returned rather than a bare boolean so the verdict can be shown to the
+    reader. No regex closes the set of ways English says "I built a thing", so
+    this classifier will always have a tail of mistakes - the honest response
+    is not to claim otherwise but to print the evidence, so a reader who sees
+    "flagged: I got tired of" can tell at a glance that the call was wrong and
+    treat the post as a lead anyway.
+
+    Same principle as the scoring: a judgement you cannot inspect is a
+    judgement you cannot overrule.
+    """
     text = post.text()
 
-    if STRONG_BUILDER.search(text):
-        return True
+    m = STRONG_BUILDER.search(text)
+    if m:
+        return " ".join(m.group(0).split())[:60]
 
-    if WEAK_BUILDER.search(text):
-        return True
+    m = WEAK_BUILDER.search(text)
+    if m:
+        return " ".join(m.group(0).split())[:60]
 
     # Source-specific, because the same words mean different things elsewhere:
     # "[feat]" in a Reddit title is rare and probably not a roadmap item.
-    return bool(post.source.startswith("github")
-                and FEATURE_REQUEST.search(post.title))
+    if post.source.startswith("github"):
+        m = FEATURE_REQUEST.search(post.title)
+        if m:
+            return " ".join(m.group(0).split())[:60]
+    return None
+
+
+def is_builder(post):
+    """Is this someone building the solution rather than living the problem?"""
+    return builder_reason(post) is not None
 
 
 def keywords(query):
@@ -756,10 +777,12 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
         post_obj = entry["post"]
         stale, thin = is_stale(post_obj), is_thin(post_obj)
 
-        if is_builder(post_obj):
+        reason = builder_reason(post_obj)
+        if reason:
             # No draft. The opener asks how long the problem has been going on,
             # which is the wrong question for someone selling the answer to it.
             entry["draft"] = ""
+            entry["builder_reason"] = reason
             builders.append(entry)
         elif post_obj.contactable and not stale and not thin:
             people.append(entry)

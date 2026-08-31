@@ -216,7 +216,14 @@ def main():
             p = b["post"]
             print(f"  [{i}] {p.title.strip()[:70]}")
             print(f"      {p.source} - {b['age']}")
+            # The words that flagged it. No regex closes the set of ways
+            # English says "I built a thing", so this call will sometimes be
+            # wrong - and a reader who can see WHY can overrule it in a second.
+            if b.get("builder_reason"):
+                print(f'      flagged by: "{b["builder_reason"]}"')
             print(f"      {p.url[:88]}")
+        print("\n  Each shows the words that flagged it. If one looks wrong,")
+        print("  it is wrong - treat that person as a lead and write to them.")
         print("\n  Not leads, and not nothing. Read what they built and what")
         print("  people say back to them - that is the fastest free research")
         print("  you will get. If several exist and none has taken the market,")

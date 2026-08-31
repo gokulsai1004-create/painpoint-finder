@@ -129,8 +129,8 @@ def main():
         print("\n  Some sources could not be searched. Treat a low count as")
         print("  incomplete rather than as an answer.")
 
-    leads, pages, terms = rank(results, query, limit=args.n,
-                               semantic_on=not args.no_semantic)
+    leads, builders, pages, terms = rank(
+        results, query, limit=args.n, semantic_on=not args.no_semantic)
     print(f"\nMatched on: {', '.join(terms) or '(no usable keywords)'}")
 
     # Say which ranking actually ran. Keyword-only ordering is noticeably
@@ -155,7 +155,7 @@ def main():
     # The verdict goes before the leads. Seven matches reads as promising until
     # you learn it was seven out of nine hundred, and by then you have already
     # started planning what to build.
-    summary = summarise(results, leads, pages, terms)
+    summary = summarise(results, leads, pages, terms, builders)
     stale = " (from cached results)" if cached else ""
     print("\n" + "=" * 78)
     print(f"VERDICT: {summary['signal']} signal{stale}")
@@ -175,13 +175,28 @@ def main():
         print("  tool's own author found his second idea after the first died.")
     print("=" * 78)
 
-    if not leads and not pages:
+    if not leads and not builders and not pages:
         print("\nNothing found.")
         if level in ("LOW", "PARTIAL"):
             print("Coverage was thin, so this is weak evidence either way.")
         else:
             print("Nobody in the searched sources is describing this problem.")
         return 1
+
+    if builders:
+        # Before the leads, deliberately. If somebody already shipped this, that
+        # changes what you do tomorrow more than one more complaint would, and a
+        # reader who has already started drafting replies has stopped deciding.
+        print(f"\n{len(builders)} ALREADY BUILDING THIS - your competition:\n")
+        for i, b in enumerate(builders, 1):
+            p = b["post"]
+            print(f"  [{i}] {p.title.strip()[:70]}")
+            print(f"      {p.source} - {b['age']}")
+            print(f"      {p.url[:88]}")
+        print("\n  Not leads, and not nothing. Read what they built and what")
+        print("  people say back to them - that is the fastest free research")
+        print("  you will get. If several exist and none has taken the market,")
+        print("  the interesting question is why.")
 
     if leads:
         print(f"\n{len(leads)} PERSON/PEOPLE you can reply to, best first:\n")

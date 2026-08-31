@@ -84,6 +84,64 @@ PROMO_MARKERS = re.compile(
 )
 
 
+
+# Someone who has already built the thing, or is building it right now.
+#
+# These are not leads and they are not noise - they are the single most
+# decision-relevant thing a search can turn up, and burying them among the
+# people to message wastes both. Two live runs put one at the top: a query
+# about student internships ranked a feature request on somebody's InternHack
+# repo first, and a query about restaurant rotas ranked "[Beta] FastQRMenu -
+# looking for restaurant owners to test" second. Neither person has the
+# problem. Both have your idea.
+BUILDER_MARKERS = re.compile(
+    # Bracketed launch tags, the convention on r/alphaandbetausers and similar.
+    r"(\[\s*(beta|launch|show|showoff|feedback|oc\s*:\s*tool)\s*\]"
+    r"|\b(show hn|launch hn|roast my|my (side project|startup|saas))\b"
+    # Recruiting testers. "[Beta] FastQRMenu - looking for restaurant owners to
+    # test updating a menu from their phone" matched none of the old markers.
+    r"|\blooking for\s+(\w+\s+){0,3}(testers?|beta|early (users|adopters))\b"
+    r"|\blooking for\s+(\w+\s+){0,3}\bto\s+(test|try|beta)\b"
+    r"|\b(beta|early) (access|testers?|users)\b|\bwaitlist\b"
+    # First-person building, as opposed to first-person suffering.
+    r"|\bi'?m\s+(testing|building|working on|launching)\b"
+    r"|\bwe'?(re|ve)\s+(built|building|launching|made)\b"
+    r"|\b(just )?(launched|shipped|released)\s+(a|an|my|our)\b"
+    r"|\bfeedback\s+(welcome|appreciated|wanted)\b"
+    r"|\btry it (out|free|here)\b)",
+    re.IGNORECASE,
+)
+
+# A feature request is a description of a product's roadmap, not of a person's
+# life. On GitHub it is the dominant post shape, which is why that source kept
+# returning competitors: the repo already does the thing you were going to do.
+#
+# Deliberately NOT catching plain bug reports. Someone whose tool is broken is
+# genuinely in pain, and that is a lead.
+FEATURE_REQUEST = re.compile(
+    # Bracketed tag ANYWHERE, not just at the start. GitHub titles reach this
+    # tool prefixed with their issue number - "Issue #11 - [feat] Employee
+    # Module" - so an anchored pattern caught only the competitors whose
+    # numbers happened to be missing.
+    r"(\[\s*(feat|feature|enhancement|proposal|rfc)\s*\]"
+    # Conventional-commit style, which genuinely is anchored: "feat(apex): ...".
+    r"|^\s*(feat|feature|enhancement|proposal|rfc)\s*[:(]"
+    r"|\bfeature request\b"
+    r"|\badd (support for|the ability to|a way to)\b)",
+    re.IGNORECASE,
+)
+
+
+def is_builder(post):
+    """Is this someone building the solution rather than living the problem?"""
+    text = post.text()
+    if BUILDER_MARKERS.search(text) or PROMO_MARKERS.search(text):
+        return True
+    # Source-specific, because the same words mean different things elsewhere:
+    # "[feat]" in a Reddit title is rare and probably not a roadmap item.
+    return bool(post.source.startswith("github") and FEATURE_REQUEST.search(post.title))
+
+
 def keywords(query):
     """The words from a query that actually carry meaning."""
     words = re.findall(r"[a-z']+", query.lower())
@@ -472,6 +530,9 @@ def _title_words(title):
 def rank(results, query, limit=10, min_score=1, semantic_on=True):
     """All sources' posts, best leads first.
 
+    Returns (people, builders, pages, terms): the people you can reply to, the
+    people already building this, and the pages that prove the topic is real.
+
     Deduped on author plus title, not URL: a cross-post to five subreddits is
     five URLs and one person. Showing them five times would waste four of the
     leads and make the tool look broken.
@@ -539,17 +600,27 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
 
     scored.sort(key=lambda x: -x["score"])
 
+    # Three piles, not two.
+    #
     # People first, always. A page is evidence the topic exists; a person is
     # someone who can answer you, and answers are the point.
     #
-    # Two ways to fail that promise: no author to reply to, or an author who
-    # posted so long ago they will never see it. Both become evidence instead.
-    people, pages = [], []
+    # Builders are their own pile because they are neither. Handing someone
+    # their competitors under the heading "people you can reply to" wastes the
+    # slot AND buries the most decision-relevant thing in the run: if three
+    # people already shipped this, that changes what you do tomorrow far more
+    # than one more complaint would.
+    people, builders, pages = [], [], []
     for entry in scored:
         post_obj = entry["post"]
         stale, thin = is_stale(post_obj), is_thin(post_obj)
 
-        if post_obj.contactable and not stale and not thin:
+        if is_builder(post_obj):
+            # No draft. The opener asks how long the problem has been going on,
+            # which is the wrong question for someone selling the answer to it.
+            entry["draft"] = ""
+            builders.append(entry)
+        elif post_obj.contactable and not stale and not thin:
             people.append(entry)
         else:
             # Record WHY, because the reason changes what the reader does with
@@ -559,4 +630,4 @@ def rank(results, query, limit=10, min_score=1, semantic_on=True):
                 entry["why_not_lead"] = "too old" if stale else "nothing written"
             pages.append(entry)
 
-    return people[:limit], pages[:limit], terms
+    return people[:limit], builders[:limit], pages[:limit], terms

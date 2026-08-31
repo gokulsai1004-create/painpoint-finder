@@ -118,6 +118,16 @@ def themes(posts, query_terms, top=6, min_count=3):
     word_counts = Counter()
 
     for post in posts:
+        # Repositories do not have opinions. A restaurant-rota search reported
+        # "menu management", "user friendly" and "option available" as the
+        # loudest rival themes - that is README and issue-template boilerplate
+        # from other people's restaurant apps, and presenting it as "what
+        # everyone is talking about instead" points the reader at vocabulary
+        # rather than at a problem. This block exists to surface the pain
+        # nobody has named yet, and only humans write that.
+        if post.source.startswith("github"):
+            continue
+
         words = _words(post.text())
         # A post repeating a word twenty times should not outvote twenty posts
         # mentioning it once, so each post contributes each term at most once.
@@ -164,14 +174,23 @@ def _downgrade(signal, steps=1):
     return LEVELS[max(0, LEVELS.index(signal) - steps)]
 
 
-def summarise(results, leads, pages, terms):
-    """Everything the user needs to judge the answer, as plain data."""
+def summarise(results, leads, pages, terms, builders=()):
+    """Everything the user needs to judge the answer, as plain data.
+
+    Builders count as matches. They are not leads - nobody wants a pain
+    interview from a stranger while they are selling the cure - but they are
+    posts about this exact problem, and leaving them out would understate the
+    rate AND let them leak into the themes as "what everyone is talking about
+    instead". A restaurant-rota search reported "menu management" and "user
+    friendly" as rival themes; that was the README vocabulary of the very
+    competitors it had just found.
+    """
     usable = [r for r in results if r.usable]
     total_searched = sum(r.searched for r in usable)
-    matched = len(leads) + len(pages)
+    matched = len(leads) + len(builders) + len(pages)
 
     all_posts = [p for r in usable for p in r.posts]
-    matched_urls = {l["post"].url for l in leads} | {p["post"].url for p in pages}
+    matched_urls = {e["post"].url for e in list(leads) + list(builders) + list(pages)}
     unmatched = [p for p in all_posts if p.url not in matched_urls]
 
     # Ratio, not count. Seven means nothing without the denominator.
@@ -192,7 +211,8 @@ def summarise(results, leads, pages, terms):
     # posts and reported MODERATE - "worth a conversation" - when the top result
     # was a nine-year-old photo. Quantity said yes; quality said no, and the
     # verdict only asked quantity.
-    sims = [e["similarity"] for e in leads + pages if "similarity" in e]
+    sims = [e["similarity"] for e in list(leads) + list(builders) + list(pages)
+            if "similarity" in e]
     quality = None
     caveat = ""
 
@@ -207,13 +227,22 @@ def summarise(results, leads, pages, terms):
     # count says. Leads are the product; pages are consolation.
     if not leads and signal in ("MODERATE", "STRONG"):
         signal = "WEAK"
-        caveat = caveat or ("nothing recent enough to reply to - only pages and "
-                            "old posts")
+        if builders:
+            # A different situation entirely, and it deserves different words:
+            # the space is not quiet, it is taken. Telling someone "nothing to
+            # reply to" when the answer is "everyone here is a competitor"
+            # would hide the finding that matters most.
+            caveat = caveat or ("everyone posting about this is building it, "
+                                "not living it - no customers found, only rivals")
+        else:
+            caveat = caveat or ("nothing recent enough to reply to - only pages "
+                                "and old posts")
 
     return {
         "searched": total_searched,
         "matched": matched,
         "people": len(leads),
+        "builders": len(builders),
         "pages": len(pages),
         "rate": rate,
         "signal": signal,

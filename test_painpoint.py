@@ -8,6 +8,8 @@ Reddit to be up is a test that fails for reasons that are not bugs.
 Run:  python test_painpoint.py
 """
 
+import sys
+import time
 import unittest
 
 import leads
@@ -277,7 +279,7 @@ class TestRanking(unittest.TestCase):
                  url="u1", author="same")
         b = post(title="Client refuses to pay", body="freelancer here",
                  url="u2", author="same")
-        people, _, _ = leads.rank(self._results([a, b]), "client refuses pay")
+        people, _, _, _ = leads.rank(self._results([a, b]), "client refuses pay")
         self.assertEqual(len(people), 1)
 
     def test_reworded_crosspost_shown_once(self):
@@ -290,7 +292,7 @@ class TestRanking(unittest.TestCase):
         b = post(title="How much freedom does ur school / university give you?",
                  body="I want to know how much freedom schools actually give.",
                  url="u2", author="TomZillaforLife")
-        people, _, _ = leads.rank(self._results([a, b]), "school freedom students")
+        people, _, _, _ = leads.rank(self._results([a, b]), "school freedom students")
         self.assertEqual(len(people), 1)
 
     def test_same_author_different_topic_both_kept(self):
@@ -303,14 +305,14 @@ class TestRanking(unittest.TestCase):
                  body="The feed screw on the cement kiln jams and maintenance "
                       "takes the whole line down for a day.",
                  url="u2", author="planthand")
-        people, _, _ = leads.rank(self._results([a, b]), "cement kiln problem")
+        people, _, _, _ = leads.rank(self._results([a, b]), "cement kiln problem")
         self.assertEqual(len(people), 2)
 
     def test_pages_separated_from_people_and_get_no_draft(self):
         person = post(title="Client refuses to pay", body="me too", url="u1")
         page = post(title="Client refuses to pay: a guide", body="advice",
                     url="u2", contactable=False)
-        people, pages, _ = leads.rank(self._results([person, page]),
+        people, _, pages, _ = leads.rank(self._results([person, page]),
                                       "client refuses pay")
         self.assertEqual(len(people), 1)
         self.assertEqual(len(pages), 1)
@@ -326,7 +328,7 @@ class TestRanking(unittest.TestCase):
         recent = post(title="Cement kiln maintenance problem",
                       body="our cement kiln keeps failing", url="u2",
                       age_days=20)
-        people, pages, _ = leads.rank(self._results([old, recent]),
+        people, _, pages, _ = leads.rank(self._results([old, recent]),
                                       "cement kiln maintenance",
                                       semantic_on=False)
         self.assertEqual([p["post"].url for p in people], ["u2"])
@@ -336,14 +338,14 @@ class TestRanking(unittest.TestCase):
     def test_undated_post_is_not_a_lead(self):
         undated = post(title="Client refuses to pay", body="text", url="u1")
         undated.created_utc = 0
-        people, pages, _ = leads.rank(self._results([undated]),
+        people, _, pages, _ = leads.rank(self._results([undated]),
                                       "client refuses pay", semantic_on=False)
         self.assertEqual(people, [])
         self.assertEqual(len(pages), 1)
 
     def test_blocked_source_contributes_nothing(self):
         results = [Result("test", BLOCKED, detail="rate-limited")]
-        people, pages, _ = leads.rank(results, "client refuses pay")
+        people, _, pages, _ = leads.rank(results, "client refuses pay")
         self.assertEqual((people, pages), ([], []))
 
 
@@ -650,7 +652,7 @@ class TestSemantic(unittest.TestCase):
                           posts=[post(title="Client refuses to pay",
                                       body="freelancer here", url="u1")],
                           searched=1)]
-        people, pages, terms = leads.rank(results, "client refuses pay",
+        people, _, pages, terms = leads.rank(results, "client refuses pay",
                                           semantic_on=False)
         self.assertEqual(len(people), 1)
         self.assertNotIn("reranked", people[0])
@@ -753,6 +755,203 @@ class TestWebSource(unittest.TestCase):
         finally:
             web.COOLDOWN_FILE.unlink(missing_ok=True)
             web.COOLDOWN_FILE = original
+
+
+
+class TestBuilders(unittest.TestCase):
+    """Someone already building this is not someone who has the problem.
+
+    Both live runs of an idea-shaped query put a builder at the top. A student
+    internships search ranked a feature request on somebody's InternHack repo
+    first; a restaurant rota search ranked "[Beta] FastQRMenu - looking for
+    restaurant owners to test" second. Offering those as "people you can reply
+    to" wastes the slot and buries the most decision-relevant thing in the run.
+    """
+
+    def _results(self, posts):
+        return [Result("test", OK, posts=posts, searched=len(posts))]
+
+    def test_beta_launch_is_a_builder(self):
+        p = post(title="[Beta] FastQRMenu - looking for restaurant owners to test",
+                 body="I'm testing FastQRMenu, a browser-based menu manager "
+                      "for small restaurants and cafes.")
+        self.assertTrue(leads.is_builder(p))
+
+    def test_github_feature_request_is_a_builder(self):
+        p = Post(source="github Ashutosh-negi07/Plato",
+                 title="[feat] Employee Module - assign and manage restaurant staff",
+                 body="", url="u", author="a", created_utc=time.time())
+        self.assertTrue(leads.is_builder(p))
+
+    def test_a_bug_report_is_not_a_builder(self):
+        # Someone whose tool is broken is genuinely in pain. Over-matching here
+        # would silently delete the best leads GitHub has.
+        p = Post(source="github acme/billing",
+                 title="Billing breaks when the invoice date is null",
+                 body="Our team hit this in production and lost a day.",
+                 url="u", author="a", created_utc=time.time())
+        self.assertFalse(leads.is_builder(p))
+
+    def test_a_real_complaint_is_not_a_builder(self):
+        p = post(title="Restaurant owners - curious how you handle scheduling",
+                 body="Our manager has mentioned how much of a headache it is "
+                      "dealing with availability, schedule changes and call-outs.")
+        self.assertFalse(leads.is_builder(p))
+
+    def test_builders_are_separated_from_leads(self):
+        rival = post(title="Show HN: I built a rota tool for restaurants",
+                     body="I built a scheduling tool for restaurant staff rotas.")
+        sufferer = post(title="Restaurant staff rotas are a nightmare",
+                        body="Every week I redo the restaurant staff rotas by "
+                             "hand and somebody always calls out.")
+        people, builders, _, _ = leads.rank(
+            self._results([rival, sufferer]), "restaurant staff rotas",
+            semantic_on=False)
+        self.assertEqual([e["post"].url for e in builders], [rival.url])
+        self.assertEqual([e["post"].url for e in people], [sufferer.url])
+
+    def test_builders_get_no_draft(self):
+        rival = post(title="Show HN: I built a rota tool for restaurants",
+                     body="I built a scheduling tool for restaurant staff rotas.")
+        _, builders, _, _ = leads.rank(self._results([rival]),
+                                       "restaurant staff rotas", semantic_on=False)
+        self.assertEqual(builders[0]["draft"], "")
+
+    def test_builders_still_count_as_matches(self):
+        # They are posts about this exact problem. Dropping them would
+        # understate the rate and let them leak into the themes as "what
+        # everyone is talking about instead".
+        rival = post(title="Show HN: I built a rota tool for restaurants",
+                     body="I built a scheduling tool for restaurant staff rotas.")
+        results = self._results([rival])
+        people, builders, pages, terms = leads.rank(
+            results, "restaurant staff rotas", semantic_on=False)
+        summary = verdict.summarise(results, people, pages, terms, builders)
+        self.assertEqual(summary["matched"], 1)
+        self.assertEqual(summary["builders"], 1)
+        self.assertEqual(summary["themes"], [])
+
+    def test_only_builders_cannot_read_as_strong(self):
+        # Nobody to reply to is a ceiling however loud the space is.
+        rivals = [post(title=f"Show HN: I built rota tool {i}",
+                       body="I built a scheduling tool for restaurant staff rotas.")
+                  for i in range(9)]
+        results = [Result("test", OK, posts=rivals, searched=10)]
+        people, builders, pages, terms = leads.rank(
+            results, "restaurant staff rotas", semantic_on=False)
+        self.assertEqual(people, [])
+        summary = verdict.summarise(results, people, pages, terms, builders)
+        self.assertNotIn(summary["signal"], ("STRONG", "MODERATE"))
+
+
+    def test_github_issue_number_prefix_does_not_hide_a_feature_request(self):
+        # GitHub titles arrive prefixed with their issue number, so an anchored
+        # pattern caught only the ones whose number happened to be missing.
+        # "Issue #11 - [feat] Employee Module" sat in the leads list and got a
+        # drafted pain interview sent to the person building the competitor.
+        for title in ("Issue #11 - [feat] Employee Module - manage staff",
+                      "feat(apex): news and tools content hub",
+                      "Issue #9 - feature request: bulk import"):
+            p = Post(source="github x/y", title=title, body="", url="u",
+                     author="a", created_utc=time.time())
+            self.assertTrue(leads.is_builder(p), title)
+
+    def test_repository_text_stays_out_of_the_themes(self):
+        # A restaurant-rota search reported "menu management" and "user
+        # friendly" as the loudest rival themes. That is README boilerplate
+        # from competitors' repos, not people talking about a problem.
+        repo = [Post(source="github a/b", title="Restaurant POS",
+                     body="menu management user friendly option available "
+                          "menu management user friendly option available",
+                     url=f"r{i}", author="", created_utc=time.time())
+                for i in range(6)]
+        human = [Post(source="reddit", title="Rota headaches",
+                      body="call outs ruin the week, call outs every week",
+                      url=f"h{i}", author="a", created_utc=time.time())
+                 for i in range(6)]
+        found = verdict.themes(repo + human, ["rota"])
+        flat = " ".join(phrase for phrase, _ in found)
+        self.assertNotIn("menu management", flat)
+        self.assertNotIn("user friendly", flat)
+        self.assertIn("call outs", flat)
+
+class TestCommandLine(unittest.TestCase):
+    """Actually run main().
+
+    Everything else here tests functions. A crash lived in find.py through a
+    full green test run - rank() grew a fourth return value and the caller
+    still unpacked three - because nothing exercised the program end to end.
+    Unit tests cannot catch a wiring bug between two units.
+    """
+
+    def _run(self, argv, posts):
+        import contextlib
+        import io as _io
+        import find
+        import sources
+
+        fake = [Result("test", OK, posts=posts, searched=len(posts))]
+        saved_run_all, saved_argv = sources.run_all, sys.argv
+        sys.argv = ["find.py"] + argv
+        sources.run_all = lambda *a, **k: fake
+        out = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                code = find.main()
+        finally:
+            sources.run_all, sys.argv = saved_run_all, saved_argv
+        return code, out.getvalue()
+
+    def test_a_normal_search_runs_end_to_end(self):
+        code, out = self._run(
+            ["client refuses to pay for revisions", "--no-semantic"],
+            [post(title="Client refuses to pay for revisions",
+                  body="Three months of invoices ignored and I am stuck.")])
+        self.assertEqual(code, 0)
+        self.assertIn("VERDICT", out)
+        self.assertIn("you can reply to", out)
+
+    def test_an_idea_shaped_query_runs_end_to_end(self):
+        code, out = self._run(
+            ["i wanna build a tool that helps restaurants manage staff rotas",
+             "--no-semantic"],
+            [post(title="Restaurant staff rotas are a nightmare",
+                  body="Every week I redo the restaurant staff rotas by hand "
+                       "and somebody always calls out at the last minute.")])
+        self.assertEqual(code, 0)
+        self.assertIn("reads like an idea", out)
+
+    def test_builders_are_shown_as_competition_not_as_leads(self):
+        code, out = self._run(
+            ["restaurant staff rotas", "--no-semantic"],
+            [post(title="Show HN: I built a rota tool for restaurants",
+                  body="I built a scheduling tool for restaurant staff rotas.")])
+        self.assertIn("ALREADY BUILDING THIS", out)
+        self.assertNotIn("draft reply", out)
+
+    def test_finding_nothing_does_not_crash(self):
+        code, out = self._run(["something nobody discusses", "--no-semantic"], [])
+        self.assertIn(code, (0, 1))
+        self.assertIn("Nothing found", out)
+
+    def test_every_source_blocked_says_unknown_not_none(self):
+        import contextlib
+        import io as _io
+        import find
+        import sources
+
+        blocked = [Result("test", BLOCKED, detail="rate-limited")]
+        saved_run_all, saved_argv = sources.run_all, sys.argv
+        sys.argv = ["find.py", "anything", "--no-semantic"]
+        sources.run_all = lambda *a, **k: blocked
+        out = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                find.main()
+        finally:
+            sources.run_all, sys.argv = saved_run_all, saved_argv
+        text = out.getvalue()
+        self.assertNotIn("Nobody in the searched sources", text)
 
 
 if __name__ == "__main__":

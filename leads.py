@@ -108,7 +108,12 @@ PROMO_MARKERS = re.compile(
 # shipping.
 STRONG_BUILDER = re.compile(
     r"(\[\s*(beta|launch|showoff|dev\s*log)\s*\]"
-    r"|\b(show hn|launch hn|roast my)\b"
+    r"|\b(show hn|launch hn)\b"
+    # "roast my" needs its object. Bare, it caught "PLEASE ROAST MY
+    # RESUME" from a jobs subreddit - a person asking for feedback on their
+    # CV, filed as a competitor. Found by auditing 565 posts across ten
+    # industries; it was the only false positive in the set.
+    r"|\broast my\s+(\w+\s+){0,2}(startup|saas|app|site|website|landing page|product|idea|mvp|project|demo)\b"
     # "my startup" alone is not promotion. It is how founders ask for help -
     # "How can I grow my startup, it is in prototype stage" is a person with a
     # problem, and a quoted comment inside an AMA tripped it too. Both were

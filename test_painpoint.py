@@ -1228,6 +1228,15 @@ class TestCodeReviewRegressions(unittest.TestCase):
             "restaurant staff rotas", semantic_on=False)
         self.assertTrue(builders[0]["builder_reason"])
 
+    def test_roast_my_needs_its_object(self):
+        # "PLEASE ROAST MY RESUME" from a jobs subreddit was filed as a
+        # competitor. Found by auditing 565 posts across ten industries - the
+        # only false positive in the set, and invisible to fixtures because
+        # nobody writing them thinks of resumes.
+        self.assertFalse(leads.is_builder(post(title="PLEASE ROAST MY RESUME")))
+        self.assertTrue(leads.is_builder(post(title="Roast my startup idea")))
+        self.assertTrue(leads.is_builder(post(title="roast my saas landing page")))
+
     def test_a_null_author_does_not_take_down_the_search(self):
         # GitHub and Stack Exchange return the author key present-and-null for
         # ghost/deleted accounts, and .get(key, "") only supplies the default

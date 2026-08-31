@@ -19,6 +19,7 @@ material the other sources cannot reach.
 Replaces the stackoverflow source, which is now just one site among these.
 """
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
@@ -31,6 +32,30 @@ from . import BLOCKED, ERROR, OK, Post, Result, register
 API = "https://api.stackexchange.com/2.3/search/advanced"
 
 HEADERS = {"User-Agent": "painpoint-finder/0.1 (research tool)"}
+
+# Anonymous access allows 300 requests per IP per day, reset at UTC midnight.
+# One search costs one request per site, or two where the narrow query finds
+# nothing and it widens - so roughly 8 to 16 per search, or about 20 searches a
+# day before this source starts refusing. That is enough to try the tool and
+# not enough to develop against it, which is exactly how it was exhausted
+# repeatedly while this was being built.
+#
+# A free registered key raises the ceiling to 10,000 a day. It needs no account
+# on this side and nothing is sent with it beyond the search itself; the tool
+# works without one and simply has less room. Optional by design, like
+# fastembed: no key, no account, no sign-up is a promise worth keeping for the
+# default path.
+#
+#     set STACKEXCHANGE_KEY=...        (Windows)
+#     export STACKEXCHANGE_KEY=...     (macOS / Linux)
+#
+# Get one at https://stackapps.com/apps/oauth/register
+KEY = os.environ.get("STACKEXCHANGE_KEY", "").strip()
+
+# Below this the source says so, rather than letting the next search fail with
+# no warning. Silence about a budget you are about to run out of is the same
+# failure as silence about a blocked search.
+QUOTA_WARNING = 30
 
 # Chosen for breadth of industry rather than volume. Ordered by how much ground
 # each covers that the other sources do not: The Workplace first because it
@@ -82,6 +107,7 @@ def _search_site(site, search_text, limit, deadline):
                 "site": site,
                 "filter": "withbody",
                 "pagesize": min(limit, 100),
+                **({"key": KEY} if KEY else {}),
             },
             headers=HEADERS,
             timeout=min(PER_REQUEST_TIMEOUT, remaining),
@@ -116,6 +142,8 @@ def _search_site(site, search_text, limit, deadline):
     if resp.status_code >= 400:
         return [], ERROR, f"{site}: HTTP {resp.status_code}"
 
+    remaining_quota = payload.get("quota_remaining")
+
     posts = []
     for item in payload.get("items", []):
         owner = item.get("owner") or {}
@@ -130,6 +158,8 @@ def _search_site(site, search_text, limit, deadline):
             replies=int(item.get("answer_count") or 0),
         ))
 
+    if isinstance(remaining_quota, int) and remaining_quota <= QUOTA_WARNING:
+        return posts, OK, f"quota low: {remaining_quota} requests left today"
     return posts, OK, ""
 
 

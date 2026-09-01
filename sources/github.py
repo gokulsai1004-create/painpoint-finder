@@ -17,6 +17,7 @@ import time
 import requests
 
 from . import BLOCKED, ERROR, OK, Post, Result, register
+from . import github_budget
 
 API = "https://api.github.com/search/issues"
 
@@ -46,6 +47,15 @@ def search(query, limit=100):
     q = f"{words} in:title,body type:issue"
 
     try:
+        # Shared with the repository source: one 10/minute allowance covers
+        # both search endpoints, and spending a request that will be refused
+        # anyway only makes the other source's next call fail too.
+        if not github_budget.try_spend():
+            return Result("github", BLOCKED,
+                          detail=f"GitHub search budget shared with github-repos "
+                                 f"is spent; free in "
+                                 f"{github_budget.seconds_until_free()}s")
+
         resp = requests.get(
             API,
             params={
@@ -59,6 +69,8 @@ def search(query, limit=100):
         )
     except requests.RequestException as exc:
         return Result("github", ERROR, detail=f"network: {exc}")
+
+    github_budget.note_response(resp)
 
     # GitHub answers a spent rate limit with 403, not 429, and says so only in
     # the body. Treating that as a generic error would hide the one failure

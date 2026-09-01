@@ -19,6 +19,7 @@ from pathlib import Path
 from sources import BLOCKED, ERROR, OK, Post, Result
 from sources import web
 from sources import github_repos as gr
+from sources import github_budget, github_repos
 
 
 _author_seq = [0]
@@ -1404,6 +1405,60 @@ class TestReviewRoundTwo(unittest.TestCase):
         for markup in ("nofollow", "href", "<a", "&#x2F;"):
             self.assertNotIn(markup, out, markup)
         self.assertIn("Real complaint.", out)
+
+
+class TestGithubSharedBudget(unittest.TestCase):
+    """Both GitHub sources draw on one 10/minute per-IP allowance.
+
+    They did not know about each other. One search spent up to four requests
+    between them, so three searches inside a minute - normal while refining a
+    query - blinded both at once, taking the whole competition section with it.
+    """
+
+    def setUp(self):
+        github_budget.reset()
+
+    tearDown = setUp
+
+    def test_the_budget_runs_out_and_says_when_it_is_free(self):
+        for _ in range(github_budget.PER_MINUTE):
+            self.assertTrue(github_budget.try_spend())
+        self.assertFalse(github_budget.try_spend())
+        self.assertGreater(github_budget.seconds_until_free(), 0)
+
+    def test_it_is_shared_not_per_source(self):
+        # The whole point: a request spent by one source is unavailable to the
+        # other. A per-source budget would reproduce the original bug.
+        for _ in range(github_budget.PER_MINUTE):
+            github_budget.try_spend()
+        self.assertFalse(github_budget.try_spend())
+
+    def test_an_exhausted_source_reports_blocked_not_empty(self):
+        # An empty OK here would read as "nobody has built this", which is the
+        # exact false zero this tool exists to prevent.
+        for _ in range(github_budget.PER_MINUTE):
+            github_budget.try_spend()
+        result = github_repos.search("tmux windows terminal", 10)
+        self.assertEqual(result.status, BLOCKED)
+        self.assertIn("budget", result.detail)
+
+    def test_github_headers_override_the_local_count(self):
+        # The header knows about requests this process never made - another
+        # tool on the same network, an earlier run - which a local counter
+        # cannot see. Zero means spent, whatever we think.
+        class Resp:
+            headers = {"X-RateLimit-Remaining": "0"}
+
+        self.assertTrue(github_budget.try_spend())
+        github_budget.note_response(Resp())
+        self.assertFalse(github_budget.try_spend())
+
+    def test_a_missing_header_does_not_crash_or_spend(self):
+        class Resp:
+            headers = {}
+
+        github_budget.note_response(Resp())
+        self.assertTrue(github_budget.try_spend())
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -25,6 +25,7 @@ import time
 import requests
 
 from . import BLOCKED, ERROR, OK, Post, Result, register
+from . import github_budget
 
 API = "https://api.github.com/search/repositories"
 
@@ -106,6 +107,17 @@ def search(query, limit=100):
     merged, reached = {}, False
 
     for search_text in _attempts(terms):
+        # Each widening attempt costs a request from the allowance the issue
+        # source is also drawing on. Stop rather than starve it: a narrower
+        # answer beats blinding both halves of the competition section.
+        if not github_budget.try_spend():
+            if merged:
+                break
+            return Result("github-repos", BLOCKED,
+                          detail=f"GitHub search budget shared with github "
+                                 f"is spent; free in "
+                                 f"{github_budget.seconds_until_free()}s")
+
         try:
             resp = requests.get(
                 API,
@@ -115,6 +127,8 @@ def search(query, limit=100):
             )
         except requests.RequestException as exc:
             return Result("github-repos", ERROR, detail=f"network: {exc}")
+
+        github_budget.note_response(resp)
 
         # Anonymous search rate limiting arrives as a 403 carrying the reset
         # header, which is a refusal and not a break - the same distinction the

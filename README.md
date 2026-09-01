@@ -7,7 +7,7 @@ You have an idea. Before you spend six months on it you want three answers: is
 this problem real, has somebody already solved it, and can I speak to one of
 these people this afternoon.
 
-Type the idea in your own words. It searches five public sources, tells you how
+Type the idea in your own words. It searches six public sources, tells you how
 loud the problem actually is, pulls out the people already building it, and
 hands you a drafted opener for the ones worth talking to.
 
@@ -71,10 +71,34 @@ VERDICT: MODERATE signal
 
 That is a real run, not a mock-up.
 
+## Use it inside Claude Code
+
+```
+/painpoint i wanna build a tool that helps restaurant owners manage rotas
+```
+
+```bash
+git clone https://github.com/gokulsai1004-create/painpoint-finder.git
+cp -r painpoint-finder/skill/painpoint ~/.claude/skills/
+```
+
+The CLI below is the same code and works on its own. The skill exists because
+**reading the output is the hard part**: the coverage line has to be read before
+the verdict, the verdict is a ratio rather than a judgement, the competition
+section usually matters more than the leads, and the classifier prints the words
+behind each call so you can overrule it. A person skims all of that and reads
+the leads. The skill makes Claude read it in order and say the uncomfortable
+parts out loud — that a partially blocked search proves nothing, that MODERATE
+is not permission, that a rival with 3,400 stars changes the plan.
+
+It refuses to send anything, exactly like the tool does.
+
+See [skill/](skill/) for details.
+
 ## What it does not claim
 
 **It does not know whether your idea is good.** It knows how many people in
-five searchable places are describing your problem right now, and it shows you
+six searchable places are describing your problem right now, and it shows you
 the arithmetic. `MODERATE` means 3.8% of what it read was about your thing — it
 does not mean go, and `WEAK` does not mean stop.
 
@@ -125,21 +149,36 @@ They get their own section, printed **before** the leads, because a reader who
 has started drafting replies has stopped deciding:
 
 ```
-4 ALREADY BUILDING THIS - your competition:
+3 ALREADY BUILDING THIS - your competition:
 
-  [1] Issue #11 - [feat] Employee Module - assign and manage restaurant staff
-      github Ashutosh-negi07/Plato - 10d ago
+  [1] psmux/psmux - 3400 stars
+      github-repo psmux/psmux - 1d ago
+      flagged by: "a shipped repository"
   [2] [Beta] FastQRMenu - looking for restaurant owners to test updating a menu
       reddit r/alphaandbetausers - 4d ago
-  [3] If you already know restaurant owners, I'm testing a 30% recurring affiliate
-      reddit r/passive_income - 4d ago
-  [4] Launch HN: Boostly (YC S22) - SMS marketing for restaurants
+      flagged by: "[Beta]"
+  [3] Launch HN: Boostly (YC S22) - SMS marketing for restaurants
       hackernews - 48mo ago
+      flagged by: "Launch HN"
+
+  Each shows the words that flagged it. If one looks wrong, it is wrong -
+  treat that person as a lead and write to them.
 
   Not leads, and not nothing. Read what they built and what people say back
   to them - that is the fastest free research you will get. If several exist
   and none has taken the market, the interesting question is why.
 ```
+
+**Every entry shows the words that flagged it.** No regex closes the set of
+ways English says "I built a thing", so this classifier will always be wrong
+sometimes — a bare `my startup` used to catch founders *asking for help*, which
+is precisely the person the tool exists to find. Printing the evidence does not
+shrink that tail; it changes who has to live with it. A reader who sees
+`flagged by: "I got tired of"` can tell in a second the call was wrong and write
+to that person anyway.
+
+Same principle the scoring follows: a judgement you cannot inspect is a
+judgement you cannot overrule.
 
 If *every* match is a builder, the verdict says so in those words — **"no
 customers found, only rivals"** — rather than the misleading "nothing recent
@@ -190,8 +229,17 @@ a minute. Every run after that is offline. Skip it entirely with
 | Reddit | People describing problems, via public RSS | no |
 | Hacker News | Stories **and comments** — comments are where complaints live | no |
 | Stack Exchange | 8 sites at once: The Workplace, Engineering, Law, Medical Sciences, Academia, Project Management, Money, Stack Overflow | no |
-| GitHub issues | Someone saying what a tool they *already use* cannot do — and, sorted out separately, the people building your idea | no |
+| GitHub issues | Someone saying what a tool they *already use* cannot do | no |
+| GitHub repos | **Who already shipped it**, sorted by stars | no |
 | Web (DuckDuckGo) | Fallback so no query ever returns a false zero | no |
+
+The repository search was added the hard way. Searching for *"a tmux-like
+multi-pane terminal tool for Windows"* returned four competitors and missed
+**psmux** — 3,400 stars, actively developed, with documentation for that exact
+use case — because issue search can see complaints *inside* a project but never
+the project itself, and psmux had never filed an issue describing itself. Six
+real rivals, invisible, while the verdict said MODERATE about a space that is
+comprehensively taken.
 
 GitHub issues are worth calling out. A forum complaint is someone annoyed; a
 filed issue is someone who installed the thing, hit the wall, and cared enough

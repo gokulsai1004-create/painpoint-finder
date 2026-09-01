@@ -205,6 +205,12 @@ def builder_reason(post):
     Same principle as the scoring: a judgement you cannot inspect is a
     judgement you cannot overrule.
     """
+    # A repository IS a shipped product. No sniffing for launch language: the
+    # existence of the repo is the evidence, and its description is written to
+    # sell, not to complain.
+    if post.source.startswith("github-repo "):
+        return "a shipped repository"
+
     text = post.text()
 
     m = STRONG_BUILDER.search(text)

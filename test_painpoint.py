@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sources import BLOCKED, ERROR, OK, Post, Result
 from sources import web
+from sources import github_repos as gr
 
 
 _author_seq = [0]
@@ -1249,6 +1250,69 @@ class TestCodeReviewRegressions(unittest.TestCase):
             [Result("test", OK, posts=[p], searched=1)],
             "client refuses pay", semantic_on=False)
         self.assertEqual(len(people), 1)
+
+
+class TestGithubRepoSource(unittest.TestCase):
+    """Finding the people who already shipped it.
+
+    The competition section is this tool's differentiator, and it was blind to
+    the most common kind of competitor. A search for a tmux-like multi-pane
+    terminal tool for Windows returned four "competitors", none of them psmux -
+    3,400 stars, actively developed, with documentation for that exact use
+    case. The github source searches ISSUES, so it can see complaints inside a
+    project but never the project itself, and psmux had never filed an issue
+    describing itself or posted to HN. Every source was blind at once.
+    """
+
+    def test_terms_drop_the_words_every_repo_uses(self):
+        # "tool" narrows nothing - every third repo on GitHub says it.
+        terms = gr._terms("a tmux like multi pane terminal tool for windows")
+        self.assertIn("tmux", terms)
+        self.assertNotIn("tool", terms)
+
+    def test_attempts_keep_the_word_that_identifies_the_space(self):
+        # The original bug: ranking by word LENGTH chose "terminal windows
+        # multi" and threw away "tmux", which was the only word that mattered.
+        attempts = gr._attempts(gr._terms(
+            "a tmux like multi pane terminal tool for windows"))
+        self.assertTrue(any("tmux" in a for a in attempts), attempts)
+
+    def test_attempts_are_short_because_github_ands_them(self):
+        # GitHub matches name/description/topics, not README, and ANDs terms.
+        # Five words match nothing.
+        for attempt in gr._attempts(gr._terms(
+                "a tmux like multi pane terminal tool for windows")):
+            self.assertLessEqual(len(attempt.split()), 2, attempt)
+
+    def test_relevance_counts_words_the_repo_actually_claims(self):
+        terms = ["tmux", "windows", "terminal"]
+        self.assertEqual(gr._relevance(
+            "psmux/psmux", "Tmux on Windows Powershell - tmux for Windows Terminal",
+            terms), 3)
+        self.assertEqual(gr._relevance(
+            "skalesapp/skales", "Personal AI desktop agent for Windows, macOS",
+            terms), 1)
+
+    def test_a_repository_is_never_a_lead(self):
+        # It is a product, not a person in pain. No draft, no reply slot.
+        p = Post(source="github-repo psmux/psmux", title="psmux/psmux - 3400 stars",
+                 body="Tmux on Windows", url="u", author="psmux",
+                 created_utc=time.time(), contactable=False)
+        self.assertFalse(p.contactable)
+        self.assertEqual(leads.builder_reason(p), "a shipped repository")
+
+    def test_repositories_are_classified_as_competition_not_leads(self):
+        repo = Post(source="github-repo psmux/psmux",
+                    title="psmux/psmux - 3400 stars",
+                    body="Tmux on Windows Powershell terminal multiplexer",
+                    url="u1", author="psmux", created_utc=time.time(),
+                    contactable=False)
+        people, builders, _, _ = leads.rank(
+            [Result("test", OK, posts=[repo], searched=1)],
+            "tmux windows terminal", semantic_on=False)
+        self.assertEqual(people, [])
+        self.assertEqual(len(builders), 1)
+        self.assertEqual(builders[0]["draft"], "")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

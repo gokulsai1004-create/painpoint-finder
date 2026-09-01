@@ -125,7 +125,7 @@ def themes(posts, query_terms, top=6, min_count=3):
         # everyone is talking about instead" points the reader at vocabulary
         # rather than at a problem. This block exists to surface the pain
         # nobody has named yet, and only humans write that.
-        if post.source.startswith("github"):
+        if post.source.startswith("github"):  # issues and repos alike
             continue
 
         words = _words(post.text())

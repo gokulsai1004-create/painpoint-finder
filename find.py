@@ -27,6 +27,7 @@ elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover
 try:
     import sources
     import sources.github  # noqa: F401 - importing registers the source
+    import sources.github_repos  # noqa: F401
     import sources.hackernews  # noqa: F401
     import sources.reddit  # noqa: F401
     import sources.stackexchange  # noqa: F401

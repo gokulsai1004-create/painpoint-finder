@@ -68,7 +68,7 @@ BEFORE YOU POST
 
   [ ] python test_painpoint.py           -> expect 107 passing
   [ ] python find.py "client refuses to pay for revisions" -n 3
-        -> confirm all five sources say "searched", not "COULD NOT SEARCH"
+        -> confirm all six sources say "searched", not "COULD NOT SEARCH"
   [ ] open the repo on GitHub, check the README renders (tables, code block)
 
 TIMING

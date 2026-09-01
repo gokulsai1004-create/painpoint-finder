@@ -14,6 +14,12 @@ import re
 import time
 
 # Words that carry no signal about whether a post matches a problem.
+#
+# The list began with first and second person and stopped there, which left
+# every third-person pronoun counting as a topic word. A farming search duly
+# reported its loudest rival themes as "his own", "she her", "upon them" and
+# "now only" - function words from whatever prose happened to be in the corpus,
+# presented to the user as what everyone is talking about instead.
 STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "for", "with", "without", "to", "of",
     "in", "on", "at", "is", "are", "was", "were", "be", "been", "being", "it",
@@ -21,6 +27,19 @@ STOPWORDS = {
     "you", "your", "they", "their", "not", "no", "do", "does", "did", "have",
     "has", "had", "can", "could", "would", "should", "will", "just", "get",
     "got", "as", "if", "so", "than", "then", "about", "from", "by", "up",
+    # Third person, the half that was missing.
+    "he", "him", "his", "she", "her", "hers", "them", "theirs", "itself",
+    "himself", "herself", "themselves", "myself", "ourselves", "yourself",
+    # Question words. "how do you handle scheduling" is about scheduling.
+    "who", "whom", "whose", "which", "what", "where", "when", "why", "how",
+    # Quantifiers and degree. Present in every text, distinctive in none.
+    "all", "any", "some", "each", "every", "both", "few", "more", "most",
+    "other", "others", "such", "same", "own", "only", "very", "too", "much",
+    "many", "still", "also", "even", "again", "ever", "never", "always",
+    # Prepositions and connectives the original list half-covered.
+    "into", "onto", "upon", "over", "under", "after", "before", "while",
+    "during", "between", "through", "out", "off", "down", "here", "there",
+    "now", "may", "might", "must", "shall", "am", "been", "let", "like",
 }
 
 # Someone describing a problem happening TO them is a better lead than someone

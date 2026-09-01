@@ -35,16 +35,21 @@ whether an idea is good, and saying so is part of using it correctly.
 
 ## Setup (first run only)
 
-The tool is a small Python program. Check whether it is already present next to
-this skill, and clone it if not:
+The tool is a small Python program. The base directory of this skill is given
+to you when the skill loads — use that path literally. Check whether the
+searcher is already there, and clone it if not:
 
 ```bash
-SKILL_DIR="$(dirname "$0")"   # or the directory this SKILL.md lives in
-if [ ! -d "$SKILL_DIR/painpoint-finder" ]; then
-  git clone --depth 1 https://github.com/gokulsai1004-create/painpoint-finder.git "$SKILL_DIR/painpoint-finder"
-fi
+cd "<the skill base directory you were given>"
+[ -d painpoint-finder ] || git clone --depth 1 https://github.com/gokulsai1004-create/painpoint-finder.git
 python -c "import requests" 2>/dev/null || pip install requests
 ```
+
+Do **not** try to derive the directory with `$0` or `dirname` inside this file.
+Shell variables written here are substituted before the block ever reaches a
+shell — `$0` came out as the first character of the user's argument the first
+time this ran, which would have pointed the clone at a directory that does not
+exist. Use the literal path.
 
 Optional but much better ranking — a 50MB model that runs locally, offline
 after the first download:

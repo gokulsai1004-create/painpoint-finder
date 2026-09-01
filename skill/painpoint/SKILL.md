@@ -1,7 +1,7 @@
 ---
 name: painpoint
 version: 1.0.0
-description: Check whether anyone actually has the problem behind an idea. Searches five public sources for people describing it right now, separates out who has already built it, and drafts an opener you edit and send yourself. No API key.
+description: Check whether anyone actually has the problem behind an idea. Searches six public sources for people describing it right now, pulls out whoever already shipped it (including repos with thousands of stars), and drafts an opener you edit and send yourself. Says COULD NOT SEARCH rather than reporting a false zero. No API key.
 triggers:
   - is anyone actually asking for this
   - validate this idea
@@ -91,7 +91,7 @@ COVERAGE: PARTIAL
 `COULD NOT SEARCH` means that source was **refused and never looked**. It does
 **not** mean nothing was there.
 
-**This is the single most important thing to convey.** If two of five sources
+**This is the single most important thing to convey.** If two of six sources
 were blocked, a low match count is not evidence of anything. Never summarise a
 partially-blocked run as "not much interest in this" — say the search was
 incomplete and offer to re-run later. Getting this wrong tells someone their

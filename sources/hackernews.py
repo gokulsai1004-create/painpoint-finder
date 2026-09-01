@@ -9,11 +9,30 @@ story is usually someone announcing a thing, while a comment is usually
 someone reacting to it, and reacting is where the complaints live.
 """
 
+import re
 import time
+from html import unescape
 
 import requests
 
 from . import ERROR, OK, Post, Result, register
+
+# Algolia returns comment and story text as rendered HTML. Left alone, the
+# markup becomes vocabulary: a farming search reported "rel nofollow" and
+# "href rel" as its two loudest rival themes, out of 25 of 99 posts carrying
+# raw anchor tags. Paragraph breaks are kept so best_quote() still has real
+# sentences to split on; everything else goes.
+BLOCK_TAG = re.compile(r"</?(p|br|li|blockquote|pre)[^>]*>", re.IGNORECASE)
+TAGS = re.compile(r"<[^>]+>")
+
+
+def _strip_html(fragment):
+    if not fragment:
+        return ""
+    with_breaks = BLOCK_TAG.sub("\n", fragment)
+    # Unescape LAST: HN double-encodes, so entities can hide markup that would
+    # otherwise survive tag stripping.
+    return unescape(unescape(TAGS.sub("", with_breaks))).strip()
 
 API = "https://hn.algolia.com/api/v1/search"
 ITEM = "https://news.ycombinator.com/item?id="
@@ -48,7 +67,7 @@ def _fetch(query, tags, limit, deadline):
     posts = []
     for hit in hits:
         # A story carries its text in story_text; a comment in comment_text.
-        body = hit.get("comment_text") or hit.get("story_text") or ""
+        body = _strip_html(hit.get("comment_text") or hit.get("story_text") or "")
         title = hit.get("title") or hit.get("story_title") or ""
 
         # A comment has no title of its own. Falling back to the story title

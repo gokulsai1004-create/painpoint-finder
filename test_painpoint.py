@@ -1342,5 +1342,68 @@ class TestGithubRepoSource(unittest.TestCase):
         self.assertEqual(len(builders), 1)
         self.assertEqual(builders[0]["draft"], "")
 
+
+class TestReviewRoundTwo(unittest.TestCase):
+    """Four bugs from the second review, three of them in the themes block."""
+
+    def test_stopwords_stays_small_enough_to_keep_pain_phrases(self):
+        # STOPWORDS builds queries, phrase pairs and the topic gate. Expanding
+        # it to tidy the themes destroyed "laid off" - "i got laid off with no
+        # notice" became ["laid","notice"] and the pair "laid notice" - and
+        # left "why is my machine down all the time" with a one-word gate of
+        # ["machine"], which admits every post containing that word.
+        self.assertIn("laid off", leads.phrases("i got laid off with no notice"))
+        self.assertIn("machine down",
+                      leads.phrases("the machine down on the line again"))
+        self.assertIn("never pay", leads.phrases("clients never pay on time"))
+        gate = leads.essential(leads.keywords("why is my machine down all the time"))
+        self.assertGreater(len(gate), 1, gate)
+
+    def test_theme_noise_covers_third_person(self):
+        # The junk themes were "his own", "she her", "upon them", "now only".
+        # They belong in verdict.NOISE, which themes uses, not in STOPWORDS,
+        # which queries use.
+        for w in ("his", "her", "she", "him", "them", "upon", "now", "only", "own"):
+            self.assertIn(w, verdict.NOISE, w)
+
+    def test_a_crossposted_essay_votes_once_in_the_themes(self):
+        # "The Fangs of Dracula XX" is 27,294 characters of vampire fiction
+        # posted to 21 subreddits with identical text. A document that long
+        # contains almost any word, so it matched a farming query, and then
+        # supplied all six "rival themes": "eyes filled", "door open".
+        # rank() dedups cross-posts; themes runs over what rank REJECTED.
+        story = "the addict lay in the den " * 40      # > 200 chars
+        posts = [Post(source="reddit", title=f"Dracula {i}", body=story,
+                      url=f"d{i}", author="a", created_utc=time.time())
+                 for i in range(21)]
+        human = [Post(source="reddit", title="Rota trouble",
+                      body="call outs ruin the week, call outs every week",
+                      url=f"h{i}", author=f"p{i}", created_utc=time.time())
+                 for i in range(4)]
+        flat = " ".join(p for p, _ in verdict.themes(posts + human, ["harvest"]))
+        self.assertNotIn("addict lay", flat)
+        self.assertIn("call outs", flat)
+
+    def test_short_identical_bodies_still_count_separately(self):
+        # Two people typing "same here" are two people. Only long identical
+        # bodies are one piece of writing that was cross-posted.
+        posts = [Post(source="reddit", title="Rota", body="call outs every week",
+                      url=f"u{i}", author=f"p{i}", created_utc=time.time())
+                 for i in range(4)]
+        flat = " ".join(p for p, _ in verdict.themes(posts, ["harvest"]))
+        self.assertIn("call outs", flat)
+
+    def test_hacker_news_bodies_are_not_raw_html(self):
+        # Algolia returns comment text as rendered HTML. Unstripped, the markup
+        # became vocabulary: "rel nofollow" and "href rel" were the two loudest
+        # rival themes of a farming search, from 25 of 99 posts.
+        from sources.hackernews import _strip_html
+        out = _strip_html(
+            '<p>Real complaint.<p><a href="https:&#x2F;&#x2F;x.com&#x2F;d.pdf" '
+            'rel="nofollow">link</a><p>More.')
+        for markup in ("nofollow", "href", "<a", "&#x2F;"):
+            self.assertNotIn(markup, out, markup)
+        self.assertIn("Real complaint.", out)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

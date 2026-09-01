@@ -15,11 +15,16 @@ import time
 
 # Words that carry no signal about whether a post matches a problem.
 #
-# The list began with first and second person and stopped there, which left
-# every third-person pronoun counting as a topic word. A farming search duly
-# reported its loudest rival themes as "his own", "she her", "upon them" and
-# "now only" - function words from whatever prose happened to be in the corpus,
-# presented to the user as what everyone is talking about instead.
+# Deliberately SMALL. This set builds search queries, the phrase pairs and the
+# topic gate, so anything added here is stripped from what actually gets
+# searched. Expanding it once to tidy up the themes block did real damage:
+# "i got laid off with no notice" became ["laid", "notice"] - "laid off"
+# destroyed, replaced by the nonsense pair "laid notice" - and "why is my
+# machine down all the time" left a one-word gate of ["machine"], which admits
+# every post containing that word. "off", "down" and "never" are noise in a
+# theme list and load-bearing in pain language.
+#
+# Theme extraction wants a much bigger stoplist. It has one: verdict.NOISE.
 STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "for", "with", "without", "to", "of",
     "in", "on", "at", "is", "are", "was", "were", "be", "been", "being", "it",
@@ -27,19 +32,6 @@ STOPWORDS = {
     "you", "your", "they", "their", "not", "no", "do", "does", "did", "have",
     "has", "had", "can", "could", "would", "should", "will", "just", "get",
     "got", "as", "if", "so", "than", "then", "about", "from", "by", "up",
-    # Third person, the half that was missing.
-    "he", "him", "his", "she", "her", "hers", "them", "theirs", "itself",
-    "himself", "herself", "themselves", "myself", "ourselves", "yourself",
-    # Question words. "how do you handle scheduling" is about scheduling.
-    "who", "whom", "whose", "which", "what", "where", "when", "why", "how",
-    # Quantifiers and degree. Present in every text, distinctive in none.
-    "all", "any", "some", "each", "every", "both", "few", "more", "most",
-    "other", "others", "such", "same", "own", "only", "very", "too", "much",
-    "many", "still", "also", "even", "again", "ever", "never", "always",
-    # Prepositions and connectives the original list half-covered.
-    "into", "onto", "upon", "over", "under", "after", "before", "while",
-    "during", "between", "through", "out", "off", "down", "here", "there",
-    "now", "may", "might", "must", "shall", "am", "been", "let", "like",
 }
 
 # Someone describing a problem happening TO them is a better lead than someone
@@ -253,11 +245,13 @@ def builder_reason(post):
     if post.source.startswith("github-repo "):
         return "a shipped repository"
 
-    m = PROJECT_SUBMISSION.search(post.text())
+    # Built once: this runs for every post that clears the score threshold, and
+    # Post.text() concatenates title and body afresh on each call.
+    text = post.text()
+
+    m = PROJECT_SUBMISSION.search(text)
     if m:
         return " ".join(m.group(0).split())[:60]
-
-    text = post.text()
 
     m = STRONG_BUILDER.search(text)
     if m:

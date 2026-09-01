@@ -32,6 +32,12 @@ NOISE = STOPWORDS | COMMON | {
     "out", "there", "here", "over", "under", "into", "onto", "off",
     "many", "most", "some", "any", "all", "both", "each", "few", "other",
     "another", "same", "different", "several", "enough", "less", "least",
+    # third person and archaic prose - the gap that produced "his own",
+    # "she her", "upon them" and "now only" as the loudest rival themes of a
+    # farming search. STOPWORDS covers first and second person and stops.
+    "he", "him", "his", "she", "her", "hers", "them", "theirs",
+    "itself", "himself", "herself", "themselves", "upon", "now", "may",
+    "only", "own", "such",
     # people-in-general
     "guys", "anyone", "someone", "somebody", "everyone", "everybody",
     "nobody", "something", "anything", "everything", "nothing", "everyones",
@@ -102,6 +108,11 @@ def _stem(word):
     return base
 
 
+# Above this length, two identical bodies are one piece of writing that was
+# cross-posted, not two people who happened to agree.
+CROSSPOST_BODY_CHARS = 200
+
+
 def themes(posts, query_terms, top=6, min_count=3):
     """What the non-matching posts are actually about.
 
@@ -117,6 +128,24 @@ def themes(posts, query_terms, top=6, min_count=3):
     pair_counts = Counter()
     word_counts = Counter()
 
+    # One story, cross-posted, must not vote twenty-one times.
+    #
+    # "The Fangs of Dracula XX" is 27,294 characters of vampire fiction posted
+    # to twenty-one subreddits with identical text. It matched a query about
+    # farmers and harvest prices because a document that long contains almost
+    # any word, and then supplied the six loudest "rival themes" in the run:
+    # "eyes filled", "door open", "power living". rank() dedups cross-posts,
+    # but themes runs over the posts rank REJECTED, where nothing had.
+    #
+    # Hashed on the body rather than the URL, because the twenty-one copies are
+    # twenty-one different URLs and one piece of writing.
+    #
+    # Only long bodies. Two people typing "same here" or "this happened to me
+    # too" are two people, and collapsing them would quietly under-count the
+    # agreement that makes a theme worth reading. Nobody writes the same
+    # paragraph twice by coincidence.
+    seen_bodies = set()
+
     for post in posts:
         # Repositories do not have opinions. A restaurant-rota search reported
         # "menu management", "user friendly" and "option available" as the
@@ -127,6 +156,13 @@ def themes(posts, query_terms, top=6, min_count=3):
         # nobody has named yet, and only humans write that.
         if post.source.startswith("github"):  # issues and repos alike
             continue
+
+        body = post.body.strip()
+        if len(body) >= CROSSPOST_BODY_CHARS:
+            fingerprint = hash(body)
+            if fingerprint in seen_bodies:
+                continue
+            seen_bodies.add(fingerprint)
 
         words = _words(post.text())
         # A post repeating a word twenty times should not outvote twenty posts

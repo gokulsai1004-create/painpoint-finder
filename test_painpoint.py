@@ -1238,6 +1238,34 @@ class TestCodeReviewRegressions(unittest.TestCase):
         self.assertTrue(leads.is_builder(post(title="Roast my startup idea")))
         self.assertTrue(leads.is_builder(post(title="roast my saas landing page")))
 
+    def test_a_project_submission_is_a_builder(self):
+        # Found by running the skill on a farming idea: "SOLO Vonne - True
+        # Harvest ## Project Name ## One-Line Description a wholesale price
+        # oracle for small farmers" sat in the leads list, and the tool offered
+        # to send it a sympathetic "how long has this been going on?".
+        p = post(title="SOLO Vonne - True Harvest",
+                 body="## Project Name True Harvest ## One-Line Description "
+                      "A community-contributed wholesale price oracle.")
+        self.assertTrue(leads.is_builder(p))
+
+    def test_hackathon_project_in_a_sentence_is_not_a_submission(self):
+        # "hackathon submission" means you are submitting one. "hackathon
+        # project" is an ordinary noun phrase, and it caught a commenter
+        # offering to chat with founders about "your weekend hackathon
+        # project" - who is a person, and a good lead.
+        self.assertFalse(leads.is_builder(post(
+            title="Report: 90% of nurses considering leaving",
+            body="I would love to chat about whatever your startup or weekend "
+                 "hackathon project is doing in this space.")))
+        self.assertTrue(leads.is_builder(post(
+            title="My hackathon submission", body="a crop price tracker")))
+
+    def test_project_name_in_a_sentence_is_not_a_submission(self):
+        # Only the markdown heading form means a template is being filled in.
+        self.assertFalse(leads.is_builder(post(
+            title="Anyone know a good project name for my farm blog?",
+            body="Trying to pick a name and I am stuck.")))
+
     def test_a_null_author_does_not_take_down_the_search(self):
         # GitHub and Stack Exchange return the author key present-and-null for
         # ghost/deleted accounts, and .get(key, "") only supplies the default

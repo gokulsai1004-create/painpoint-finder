@@ -211,6 +211,29 @@ FEATURE_REQUEST = re.compile(
 )
 
 
+# A project submission: somebody pitching a build, usually into a hackathon or
+# workshop repo. Structurally a product announcement wearing an issue's
+# clothing, and one landed in the leads list - "SOLO Vonne - True Harvest ##
+# Project Name True Harvest ## One-Line Description A community-contributed
+# wholesale price oracle that lets small farmers check crop prices" was offered
+# as somebody to send a pain interview to.
+#
+# Anchored on markdown template headings rather than the bare words, because
+# "project name" in a sentence is ordinary English and only the heading form
+# means somebody is filling in a submission template. "submission" and "entry"
+# likewise mean you are submitting one, while "hackathon project" is just a
+# noun phrase - it caught a commenter offering to chat with founders about
+# "your weekend hackathon project", who is a person and a perfectly good lead.
+PROJECT_SUBMISSION = re.compile(
+    r"(#{1,4}\s*(project\s+(name|title|description)|one[-\s]?line\s+description"
+    r"|what\s+(it\s+)?does|the\s+problem\s+it\s+solves)\b"
+    r"|\bproject\s+submission\b"
+    r"|\bsubmitting\s+(my|our)\s+project\b"
+    r"|\bhackathon\s+(submission|entry)\b)",
+    re.IGNORECASE,
+)
+
+
 def builder_reason(post):
     """The exact words that make this look like someone building, or None.
 
@@ -229,6 +252,10 @@ def builder_reason(post):
     # sell, not to complain.
     if post.source.startswith("github-repo "):
         return "a shipped repository"
+
+    m = PROJECT_SUBMISSION.search(post.text())
+    if m:
+        return " ".join(m.group(0).split())[:60]
 
     text = post.text()
 
